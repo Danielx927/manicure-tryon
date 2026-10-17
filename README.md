@@ -21,13 +21,21 @@ npm run dev            # http://localhost:3000, admin at http://localhost:3000/a
 ```
 
 Production: `npm run build && npm start`. The server needs a writable `DATA_DIR` (default `./data`) to keep
-uploaded designs; on serverless hosts swap `src/lib/server/designs.ts` for object storage.
+uploaded designs.
+
+### Netlify (free tier)
+
+1. Push this repo to GitHub, then in Netlify choose **Add new site → Import an existing project** and pick it.
+   `netlify.toml` already sets the build; Netlify detects Next.js automatically.
+2. Under **Site configuration → Environment variables** add `ADMIN_PASSWORD` (and optionally `SESSION_SECRET`).
+3. Deploy. On Netlify, uploaded designs and the gallery list are stored in Netlify Blobs (store `nail-designs`),
+   chosen automatically at build time; see `src/lib/server/storage.ts`.
 
 ## Design images
 
 PNG, JPEG or WebP, up to 5 MB. Portrait orientation with the **nail tip at the top** and the cuticle at the
 bottom; the image is cropped to each nail like `object-fit: cover`. Eight built-in designs live in
-`seed-designs/` and are shown until an admin changes the gallery.
+`public/seed-designs/` and are shown until an admin changes the gallery.
 
 ## Layout
 

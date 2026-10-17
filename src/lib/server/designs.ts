@@ -1,12 +1,11 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { getStorage } from "./storage";
 
 export type Design = {
   id: string;
   name: string;
-  /** Path relative to the data dir, or "seed:<file>" for built-in designs. */
+  /** Storage key of the uploaded image, or "seed:<file>" for built-in designs in public/seed-designs. */
   file: string;
   contentType: string;
   createdAt: string;
@@ -14,10 +13,7 @@ export type Design = {
   purchaseUrl?: string;
 };
 
-const DATA_DIR = path.resolve(/*turbopackIgnore: true*/ process.env.DATA_DIR || "data");
-const INDEX_FILE = path.join(DATA_DIR, "designs.json");
-const UPLOAD_DIR = path.join(DATA_DIR, "designs");
-const SEED_DIR = path.resolve(/*turbopackIgnore: true*/ process.cwd(), "seed-designs");
+const INDEX_KEY = "designs.json";
 
 const SEEDS: Array<[string, string]> = [
   ["classic-red", "Classic Red"],
@@ -41,26 +37,20 @@ function withLock<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 async function readIndex(): Promise<Design[]> {
-  try {
-    return JSON.parse(await readFile(INDEX_FILE, "utf8")) as Design[];
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    const createdAt = new Date().toISOString();
-    return SEEDS.map(([slug, name]) => ({
-      id: `seed-${slug}`,
-      name,
-      file: `seed:${slug}.svg`,
-      contentType: "image/svg+xml",
-      createdAt,
-    }));
-  }
+  const stored = await (await getStorage()).readJson<Design[]>(INDEX_KEY);
+  if (stored) return stored;
+  const createdAt = new Date().toISOString();
+  return SEEDS.map(([slug, name]) => ({
+    id: `seed-${slug}`,
+    name,
+    file: `seed:${slug}.svg`,
+    contentType: "image/svg+xml",
+    createdAt,
+  }));
 }
 
 async function writeIndex(designs: Design[]) {
-  await mkdir(DATA_DIR, { recursive: true });
-  const tmp = `${INDEX_FILE}.${process.pid}.tmp`;
-  await writeFile(tmp, JSON.stringify(designs, null, 2));
-  await rename(tmp, INDEX_FILE);
+  await (await getStorage()).writeJson(INDEX_KEY, designs);
 }
 
 /** The shape sent to browsers: no file paths. */
@@ -69,7 +59,8 @@ export function toPublicDesign(d: Design) {
     id: d.id,
     name: d.name,
     createdAt: d.createdAt,
-    imageUrl: `/api/designs/${d.id}/image`,
+    // Built-in designs are static files; uploads are served by the API.
+    imageUrl: d.file.startsWith("seed:") ? `/seed-designs/${d.file.slice(5)}` : `/api/designs/${d.id}/image`,
     purchaseUrl: d.purchaseUrl ?? null,
   };
 }
@@ -80,15 +71,9 @@ export function listDesigns(): Promise<Design[]> {
 
 export async function getDesignImage(id: string): Promise<{ data: Buffer; contentType: string } | null> {
   const design = (await readIndex()).find((d) => d.id === id);
-  if (!design) return null;
-  const filePath = design.file.startsWith("seed:")
-    ? path.join(SEED_DIR, path.basename(design.file.slice(5)))
-    : path.join(DATA_DIR, design.file);
-  try {
-    return { data: await readFile(filePath), contentType: design.contentType };
-  } catch {
-    return null;
-  }
+  if (!design || design.file.startsWith("seed:")) return null;
+  const data = await (await getStorage()).readBytes(design.file);
+  return data ? { data, contentType: design.contentType } : null;
 }
 
 /** Recognises PNG, JPEG and WebP from their magic bytes; anything else is rejected. */
@@ -123,9 +108,8 @@ export function addDesign(
 ): Promise<Design> {
   return withLock(async () => {
     const id = randomUUID();
-    const file = path.join("designs", `${id}.${type.ext}`);
-    await mkdir(UPLOAD_DIR, { recursive: true });
-    await writeFile(path.join(DATA_DIR, file), data);
+    const file = `designs/${id}.${type.ext}`;
+    await (await getStorage()).writeBytes(file, data);
     const design: Design = {
       id,
       name,
@@ -147,7 +131,7 @@ export function deleteDesign(id: string): Promise<boolean> {
     if (!design) return false;
     await writeIndex(designs.filter((d) => d.id !== id));
     if (!design.file.startsWith("seed:")) {
-      await unlink(path.join(DATA_DIR, design.file)).catch(() => undefined);
+      await (await getStorage()).remove(design.file);
     }
     return true;
   });

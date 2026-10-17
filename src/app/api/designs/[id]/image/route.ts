@@ -11,7 +11,7 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/designs/[id
       "Content-Type": image.contentType,
       "Cache-Control": "public, max-age=3600",
       "X-Content-Type-Options": "nosniff",
-      // Seed designs are SVG; make sure they can never run script if opened directly.
+      // Uploads are sniffed as PNG/JPEG/WebP; still never let one run script if opened directly.
       "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
     },
   });
