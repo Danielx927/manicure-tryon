@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-export type PublicDesign = { id: string; name: string; createdAt: string; imageUrl: string };
+export type PublicDesign = {
+  id: string;
+  name: string;
+  createdAt: string;
+  imageUrl: string;
+  purchaseUrl: string | null;
+};
 
 export function useDesigns() {
   const [designs, setDesigns] = useState<PublicDesign[]>([]);

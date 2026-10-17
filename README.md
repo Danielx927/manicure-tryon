@@ -7,7 +7,10 @@ Upload a photo of your hand and try preset manicure designs on each fingernail.
 - Each nail is located from the finger's last joint and tip, then the design is clipped to a nail shape
   (round, square or almond), rotated along the finger, and shaded for curvature. Size, length and position
   can be fine-tuned with sliders, and different designs can go on different fingers.
-- **Designs** come from a preset gallery. Only admins can add or remove them, at `/admin`.
+- **Designs** come from a preset gallery. Only admins can add, remove or edit them, at `/admin`.
+- Each design can carry an optional **purchase link** (http/https only), set when uploading or edited later in the
+  admin gallery. The try-on page shows a "Buy" link on those gallery cards and a "Shop this look" list of the designs
+  currently applied.
 
 ## Running it
 
@@ -35,5 +38,5 @@ bottom; the image is cropped to each nail like `object-fit: cover`. Eight built-
 | `src/lib/handDetector.ts` | Loads MediaPipe once and runs detection on a photo |
 | `src/components/TryOn.tsx` | Upload, detection messages, design picker and fit controls |
 | `src/components/AdminPanel.tsx` | Admin sign-in, upload and removal |
-| `src/app/api/designs` | Gallery API (public list and images; admin-only create/delete) |
+| `src/app/api/designs` | Gallery API (public list and images; admin-only create, edit link/name, delete) |
 | `src/app/api/admin/session` | Password sign-in with a signed, httpOnly session cookie |

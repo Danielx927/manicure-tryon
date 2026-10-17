@@ -10,6 +10,8 @@ export type Design = {
   file: string;
   contentType: string;
   createdAt: string;
+  /** Optional shop page where customers can buy this design. */
+  purchaseUrl?: string;
 };
 
 const DATA_DIR = path.resolve(/*turbopackIgnore: true*/ process.env.DATA_DIR || "data");
@@ -61,6 +63,17 @@ async function writeIndex(designs: Design[]) {
   await rename(tmp, INDEX_FILE);
 }
 
+/** The shape sent to browsers: no file paths. */
+export function toPublicDesign(d: Design) {
+  return {
+    id: d.id,
+    name: d.name,
+    createdAt: d.createdAt,
+    imageUrl: `/api/designs/${d.id}/image`,
+    purchaseUrl: d.purchaseUrl ?? null,
+  };
+}
+
 export function listDesigns(): Promise<Design[]> {
   return readIndex();
 }
@@ -92,13 +105,35 @@ export function sniffImageType(data: Buffer): { contentType: string; ext: string
   return null;
 }
 
-export function addDesign(name: string, data: Buffer, type: { contentType: string; ext: string }): Promise<Design> {
+/** Accepts only absolute http(s) URLs; returns the normalised URL or null. */
+export function parsePurchaseUrl(raw: string): string | null {
+  try {
+    const url = new URL(raw.trim());
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+export function addDesign(
+  name: string,
+  data: Buffer,
+  type: { contentType: string; ext: string },
+  purchaseUrl?: string,
+): Promise<Design> {
   return withLock(async () => {
     const id = randomUUID();
     const file = path.join("designs", `${id}.${type.ext}`);
     await mkdir(UPLOAD_DIR, { recursive: true });
     await writeFile(path.join(DATA_DIR, file), data);
-    const design: Design = { id, name, file, contentType: type.contentType, createdAt: new Date().toISOString() };
+    const design: Design = {
+      id,
+      name,
+      file,
+      contentType: type.contentType,
+      createdAt: new Date().toISOString(),
+      ...(purchaseUrl ? { purchaseUrl } : {}),
+    };
     const designs = await readIndex();
     await writeIndex([design, ...designs]);
     return design;
@@ -115,5 +150,21 @@ export function deleteDesign(id: string): Promise<boolean> {
       await unlink(path.join(DATA_DIR, design.file)).catch(() => undefined);
     }
     return true;
+  });
+}
+
+export function updateDesign(
+  id: string,
+  changes: { name?: string; purchaseUrl?: string | null },
+): Promise<Design | null> {
+  return withLock(async () => {
+    const designs = await readIndex();
+    const design = designs.find((d) => d.id === id);
+    if (!design) return null;
+    if (changes.name !== undefined) design.name = changes.name;
+    if (changes.purchaseUrl === null) delete design.purchaseUrl;
+    else if (changes.purchaseUrl !== undefined) design.purchaseUrl = changes.purchaseUrl;
+    await writeIndex(designs);
+    return design;
   });
 }

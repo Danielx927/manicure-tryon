@@ -113,6 +113,10 @@ export default function AdminPanel() {
           <input name="name" maxLength={60} required placeholder="e.g. Cherry Blossom" />
         </label>
         <label>
+          Purchase link (optional)
+          <input name="purchaseUrl" type="url" placeholder="https://shop.example.com/cherry-blossom" />
+        </label>
+        <label>
           Image
           <input name="image" type="file" accept="image/png,image/jpeg,image/webp" required />
         </label>
@@ -130,6 +134,7 @@ export default function AdminPanel() {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={d.imageUrl} alt="" />
               <span>{d.name}</span>
+              <PurchaseLinkEditor id={d.id} value={d.purchaseUrl} onSaved={reload} />
               <button type="button" className="btn small danger" onClick={() => remove(d.id, d.name)}>
                 Remove
               </button>
@@ -138,5 +143,52 @@ export default function AdminPanel() {
         </ul>
       </section>
     </div>
+  );
+}
+
+function PurchaseLinkEditor(props: { id: string; value: string | null; onSaved: () => void }) {
+  const [url, setUrl] = useState(props.value ?? "");
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [error, setError] = useState("");
+  const dirty = url.trim() !== (props.value ?? "");
+
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setState("saving");
+    const res = await fetch(`/api/designs/${props.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ purchaseUrl: url }),
+    });
+    if (res.ok) {
+      setState("saved");
+      props.onSaved();
+    } else {
+      const body = await res.json().catch(() => ({}));
+      setError(body.error ?? "Couldn't save the link.");
+      setState("error");
+    }
+  };
+
+  return (
+    <form className="link-editor" onSubmit={save}>
+      <input
+        type="url"
+        value={url}
+        onChange={(e) => {
+          setUrl(e.target.value);
+          setState("idle");
+        }}
+        placeholder="Purchase link"
+        aria-label="Purchase link"
+      />
+      {dirty && (
+        <button className="btn small" disabled={state === "saving"}>
+          Save link
+        </button>
+      )}
+      {state === "saved" && !dirty && <span className="ok">Saved</span>}
+      {state === "error" && <span className="error">{error}</span>}
+    </form>
   );
 }

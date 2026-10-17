@@ -347,7 +347,9 @@ button.design:hover:not(:disabled) {
 
 .card input[type="text"],
 .card input[type="password"],
-.card input:not([type]) {
+.card input[type="url"],
+.card input:not([type]),
+.link-editor input {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 8px 10px;
@@ -392,4 +394,69 @@ button.design:hover:not(:disabled) {
 .ok {
   color: var(--ok);
   margin: 0;
+}
+
+/* Purchase links */
+.gallery li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.buy-link {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+a.btn {
+  text-decoration: none;
+  display: inline-block;
+}
+
+.shop {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.shop ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.shop li {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.shop img {
+  width: 28px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 14px 14px 6px 6px;
+}
+
+.link-editor {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.75rem;
+}
+
+.link-editor input {
+  width: 100%;
+  font-size: 0.75rem;
+  padding: 5px 6px;
+}
+
+.link-editor .btn {
+  align-self: center;
 }

@@ -1,16 +1,19 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/server/auth";
-import { MAX_UPLOAD_BYTES, addDesign, listDesigns, sniffImageType } from "@/lib/server/designs";
+import {
+  MAX_UPLOAD_BYTES,
+  addDesign,
+  listDesigns,
+  parsePurchaseUrl,
+  sniffImageType,
+  toPublicDesign,
+} from "@/lib/server/designs";
 
 export const dynamic = "force-dynamic";
 
-function toPublic(d: { id: string; name: string; createdAt: string }) {
-  return { id: d.id, name: d.name, createdAt: d.createdAt, imageUrl: `/api/designs/${d.id}/image` };
-}
-
 export async function GET() {
   const designs = await listDesigns();
-  return NextResponse.json({ designs: designs.map(toPublic) });
+  return NextResponse.json({ designs: designs.map(toPublicDesign) });
 }
 
 export async function POST(request: Request) {
@@ -21,6 +24,11 @@ export async function POST(request: Request) {
   const file = form?.get("image");
   const name = String(form?.get("name") ?? "").trim().slice(0, 60);
   if (!name) return NextResponse.json({ error: "Please give the design a name." }, { status: 400 });
+  const rawUrl = String(form?.get("purchaseUrl") ?? "").trim();
+  const purchaseUrl = rawUrl ? parsePurchaseUrl(rawUrl) : undefined;
+  if (purchaseUrl === null) {
+    return NextResponse.json({ error: "The purchase link must be a full web address starting with https://" }, { status: 400 });
+  }
   if (!(file instanceof File)) return NextResponse.json({ error: "Please choose an image." }, { status: 400 });
   if (file.size > MAX_UPLOAD_BYTES) {
     return NextResponse.json({ error: "Images must be 5 MB or smaller." }, { status: 413 });
@@ -29,6 +37,6 @@ export async function POST(request: Request) {
   const type = sniffImageType(data);
   if (!type) return NextResponse.json({ error: "Only PNG, JPEG or WebP images are accepted." }, { status: 415 });
 
-  const design = await addDesign(name, data, type);
-  return NextResponse.json({ design: toPublic(design) }, { status: 201 });
+  const design = await addDesign(name, data, type, purchaseUrl);
+  return NextResponse.json({ design: toPublicDesign(design) }, { status: 201 });
 }

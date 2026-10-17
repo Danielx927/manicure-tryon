@@ -176,6 +176,10 @@ export default function TryOn() {
   };
 
   const hasDesign = useMemo(() => Object.values(assigned).some(Boolean), [assigned]);
+  const appliedDesigns = useMemo(
+    () => designs.filter((d) => FINGERS.some((f) => assigned[f] === d.id)),
+    [designs, assigned],
+  );
   const nailCount = hands.reduce(
     (n, h) => n + (h.side === "palm" ? 0 : h.nails.filter((x) => x.visible).length),
     0,
@@ -229,6 +233,28 @@ export default function TryOn() {
           </div>
         )}
 
+        {appliedDesigns.length > 0 && (
+          <div className="shop" aria-label="Shop this look">
+            <h2>Shop this look</h2>
+            <ul>
+              {appliedDesigns.map((d) => (
+                <li key={d.id}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={d.imageUrl} alt="" />
+                  <span>{d.name}</span>
+                  {d.purchaseUrl ? (
+                    <a className="btn small primary" href={d.purchaseUrl} target="_blank" rel="noopener noreferrer">
+                      Buy this design
+                    </a>
+                  ) : (
+                    <span className="muted">Not available to buy yet</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="stage-actions">
           <input
             ref={fileInputRef}
@@ -278,6 +304,11 @@ export default function TryOn() {
                   <img src={d.imageUrl} alt="" loading="lazy" />
                   <span>{d.name}</span>
                 </button>
+                {d.purchaseUrl && (
+                  <a className="buy-link" href={d.purchaseUrl} target="_blank" rel="noopener noreferrer">
+                    Buy
+                  </a>
+                )}
               </li>
             );
           })}
