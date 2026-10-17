@@ -44,3 +44,4 @@ next-env.d.ts
 /public/mediapipe
 /public/models
 /data
+.netlify
