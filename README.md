@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Nail Try-On
 
-## Getting Started
+Upload a photo of your hand and try preset manicure designs on each fingernail.
 
-First, run the development server:
+- **Hand detection** runs entirely in the browser with MediaPipe Hand Landmarker. Photos never leave the device.
+- If no hand is found, or only a palm or curled fingers are visible, the page explains what to change.
+- Each nail is located from the finger's last joint and tip, then the design is clipped to a nail shape
+  (round, square or almond), rotated along the finger, and shaded for curvature. Size, length and position
+  can be fine-tuned with sliders, and different designs can go on different fingers.
+- **Designs** come from a preset gallery. Only admins can add or remove them, at `/admin`.
+
+## Running it
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install            # also copies the MediaPipe runtime and downloads the hand model into public/
+cp .env.example .env.local   # then set ADMIN_PASSWORD
+npm run dev            # http://localhost:3000, admin at http://localhost:3000/admin
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Production: `npm run build && npm start`. The server needs a writable `DATA_DIR` (default `./data`) to keep
+uploaded designs; on serverless hosts swap `src/lib/server/designs.ts` for object storage.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Design images
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+PNG, JPEG or WebP, up to 5 MB. Portrait orientation with the **nail tip at the top** and the cuticle at the
+bottom; the image is cropped to each nail like `object-fit: cover`. Eight built-in designs live in
+`seed-designs/` and are shown until an admin changes the gallery.
 
-## Learn More
+## Layout
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Path | What it does |
+| --- | --- |
+| `src/lib/nails.ts` | Landmarks to nail positions, palm/back and curled-finger checks (pure, reusable for live camera) |
+| `src/lib/renderNails.ts` | Draws a design onto one nail on a canvas |
+| `src/lib/handDetector.ts` | Loads MediaPipe once and runs detection on a photo |
+| `src/components/TryOn.tsx` | Upload, detection messages, design picker and fit controls |
+| `src/components/AdminPanel.tsx` | Admin sign-in, upload and removal |
+| `src/app/api/designs` | Gallery API (public list and images; admin-only create/delete) |
+| `src/app/api/admin/session` | Password sign-in with a signed, httpOnly session cookie |

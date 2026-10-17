@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated assets and runtime data
+/public/mediapipe
+/public/models
+/data
