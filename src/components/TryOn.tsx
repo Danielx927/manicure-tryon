@@ -234,95 +234,101 @@ export default function TryOn() {
       </section>
 
       <aside className="panel">
-        <h2>Designs</h2>
-        <fieldset className="targets">
-          <legend>Apply to</legend>
-          {FINGERS.map((f) => (
-            <label key={f} className={`chip${targets.has(f) ? " on" : ""}`}>
-              <input type="checkbox" checked={targets.has(f)} onChange={() => toggleTarget(f)} />
-              {FINGER_LABELS[f]}
-            </label>
-          ))}
-        </fieldset>
+        <section className="panel-section designs-section">
+          <h2>Designs</h2>
+          <fieldset className="targets">
+            <legend>Apply to</legend>
+            {FINGERS.map((f) => (
+              <label key={f} className={`chip${targets.has(f) ? " on" : ""}`}>
+                <input type="checkbox" checked={targets.has(f)} onChange={() => toggleTarget(f)} />
+                {FINGER_LABELS[f]}
+              </label>
+            ))}
+          </fieldset>
 
-        {designsError && <p className="muted">{designsError}</p>}
-        <ul className="gallery">
-          {designs.map((d) => {
-            const used = FINGERS.some((f) => assigned[f] === d.id);
-            return (
-              <li key={d.id}>
-                <button
-                  type="button"
-                  className={`design${used ? " selected" : ""}`}
-                  onClick={() => applyDesign(d)}
-                  disabled={targets.size === 0}
-                  title={`Apply ${d.name}`}
-                >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={d.imageUrl} alt="" loading="lazy" />
-                  <span>{d.name}</span>
-                  {d.price && <span className="price">{formatPrice(d.price)}</span>}
-                </button>
-                {d.purchaseUrl && (
-                  <a className="buy-link" href={d.purchaseUrl} target="_blank" rel="noopener noreferrer">
-                    Buy
-                  </a>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-        {hasDesign && (
-          <button type="button" className="btn small" onClick={() => setAssigned({})}>
-            Remove all designs
-          </button>
-        )}
-
-        <h2>Nails</h2>
-        <div className="shape-picker" role="radiogroup" aria-label="Nail shape">
-          {(["round", "square", "almond"] as NailShape[]).map((s) => (
-            <button
-              key={s}
-              type="button"
-              role="radio"
-              aria-checked={fit.shape === s}
-              className={`chip${fit.shape === s ? " on" : ""}`}
-              onClick={() => setFit({ ...fit, shape: s })}
-            >
-              {s[0].toUpperCase() + s.slice(1)}
+          {designsError && <p className="muted">{designsError}</p>}
+          <ul className="gallery">
+            {designs.map((d) => {
+              const used = FINGERS.some((f) => assigned[f] === d.id);
+              return (
+                <li key={d.id}>
+                  <button
+                    type="button"
+                    className={`design${used ? " selected" : ""}`}
+                    onClick={() => applyDesign(d)}
+                    disabled={targets.size === 0}
+                    title={`Apply ${d.name}`}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={d.imageUrl} alt="" loading="lazy" />
+                    <span>{d.name}</span>
+                    {d.price && <span className="price">{formatPrice(d.price)}</span>}
+                  </button>
+                  {d.purchaseUrl && (
+                    <a className="buy-link" href={d.purchaseUrl} target="_blank" rel="noopener noreferrer">
+                      Buy
+                    </a>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {hasDesign && (
+            <button type="button" className="btn small" onClick={() => setAssigned({})}>
+              Remove all designs
             </button>
-          ))}
-        </div>
-        <Slider label="Length" min={0} max={1} step={0.02} value={fit.extension} onChange={(extension) => setFit({ ...fit, extension })} />
-        <Slider label="Size" min={0.8} max={1.15} step={0.01} value={fit.size} onChange={(size) => setFit({ ...fit, size })} />
-
-        <h2>Skin tone</h2>
-        <div className="swatches" role="radiogroup" aria-label="Skin tone">
-          {profile && !SKIN_TONES.includes(profile.skinTone) && (
-            <button
-              type="button"
-              role="radio"
-              aria-checked={skinTone === profile.skinTone}
-              aria-label="Your skin tone from the scan"
-              title="From your scan"
-              className={`swatch${skinTone === profile.skinTone ? " on" : ""}`}
-              style={{ background: profile.skinTone }}
-              onClick={() => setSkinTone(profile.skinTone)}
-            />
           )}
-          {SKIN_TONES.map((tone, i) => (
-            <button
-              key={tone}
-              type="button"
-              role="radio"
-              aria-checked={skinTone === tone}
-              aria-label={`Skin tone ${i + 1}`}
-              className={`swatch${skinTone === tone ? " on" : ""}`}
-              style={{ background: tone }}
-              onClick={() => setSkinTone(tone)}
-            />
-          ))}
-        </div>
+        </section>
+
+        <section className="panel-section">
+          <h2>Nails</h2>
+          <div className="shape-picker" role="radiogroup" aria-label="Nail shape">
+            {(["round", "square", "almond"] as NailShape[]).map((s) => (
+              <button
+                key={s}
+                type="button"
+                role="radio"
+                aria-checked={fit.shape === s}
+                className={`chip${fit.shape === s ? " on" : ""}`}
+                onClick={() => setFit({ ...fit, shape: s })}
+              >
+                {s[0].toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+          </div>
+          <Slider label="Length" min={0} max={1} step={0.02} value={fit.extension} onChange={(extension) => setFit({ ...fit, extension })} />
+          <Slider label="Size" min={0.8} max={1.15} step={0.01} value={fit.size} onChange={(size) => setFit({ ...fit, size })} />
+        </section>
+
+        <section className="panel-section">
+          <h2>Skin tone</h2>
+          <div className="swatches" role="radiogroup" aria-label="Skin tone">
+            {profile && !SKIN_TONES.includes(profile.skinTone) && (
+              <button
+                type="button"
+                role="radio"
+                aria-checked={skinTone === profile.skinTone}
+                aria-label="Your skin tone from the scan"
+                title="From your scan"
+                className={`swatch${skinTone === profile.skinTone ? " on" : ""}`}
+                style={{ background: profile.skinTone }}
+                onClick={() => setSkinTone(profile.skinTone)}
+              />
+            )}
+            {SKIN_TONES.map((tone, i) => (
+              <button
+                key={tone}
+                type="button"
+                role="radio"
+                aria-checked={skinTone === tone}
+                aria-label={`Skin tone ${i + 1}`}
+                className={`swatch${skinTone === tone ? " on" : ""}`}
+                style={{ background: tone }}
+                onClick={() => setSkinTone(tone)}
+              />
+            ))}
+          </div>
+        </section>
       </aside>
 
       {scanning && <ScanHand onDone={finishScan} onClose={() => setScanning(false)} />}
