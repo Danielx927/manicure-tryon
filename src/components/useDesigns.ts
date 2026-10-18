@@ -10,6 +10,8 @@ export type PublicDesign = {
   imageUrl: string;
   purchaseUrl: string | null;
   price: Price | null;
+  /** Realistic photo of the manicure for the gallery, if there is one. */
+  photoUrl: string | null;
 };
 
 export function useDesigns() {

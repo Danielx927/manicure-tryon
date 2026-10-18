@@ -166,7 +166,7 @@ export default function TryOn() {
               {appliedDesigns.map((d) => (
                 <li key={d.id}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={d.imageUrl} alt="" />
+                  <img className={d.photoUrl ? "photo" : undefined} src={d.photoUrl ?? d.imageUrl} alt="" />
                   <span>{d.name}</span>
                   <span className="shop-price">{d.price ? formatPrice(d.price) : ""}</span>
                   {d.purchaseUrl ? (
@@ -260,7 +260,7 @@ export default function TryOn() {
                     title={`Apply ${d.name}`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={d.imageUrl} alt="" loading="lazy" />
+                    <img className={d.photoUrl ? "photo" : undefined} src={d.photoUrl ?? d.imageUrl} alt="" loading="lazy" />
                     <span>{d.name}</span>
                     {d.price && <span className="price">{formatPrice(d.price)}</span>}
                   </button>

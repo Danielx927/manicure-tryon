@@ -14,6 +14,14 @@ export type Design = {
   purchaseUrl?: string;
   /** Optional price shown to shoppers. */
   price?: Price;
+  /**
+   * Optional realistic photo of the finished manicure, shown on the gallery
+   * card instead of the flat nail image (which is still what goes on the
+   * nails). A storage key, "seed:<file>" for photos in public/seed-photos,
+   * or "" when an admin removed a built-in design's photo.
+   */
+  photoFile?: string;
+  photoContentType?: string;
 };
 
 /**
@@ -26,6 +34,9 @@ type StoredRecord = Partial<Design> & { deleted?: boolean };
 
 const META_PREFIX = "meta/";
 const metaKey = (id: string) => `${META_PREFIX}${id}.json`;
+
+/** Built-in designs that have a photo in public/seed-photos. */
+const SEED_PHOTOS: string[] = ["classic-red"];
 
 const SEED_CREATED_AT = "2026-10-17T00:00:00.000Z";
 const SEEDS: Design[] = (
@@ -45,6 +56,7 @@ const SEEDS: Design[] = (
   file: `seed:${slug}.svg`,
   contentType: "image/svg+xml",
   createdAt: SEED_CREATED_AT,
+  ...(SEED_PHOTOS.includes(slug) ? { photoFile: `seed:${slug}.jpg`, photoContentType: "image/jpeg" } : {}),
 }));
 
 // Netlify Functions cap request bodies at about 6 MB, and multipart encoding adds overhead.
@@ -60,6 +72,12 @@ export function toPublicDesign(d: Design) {
     imageUrl: d.file.startsWith("seed:") ? `/seed-designs/${d.file.slice(5)}` : `/api/designs/${d.id}/image`,
     purchaseUrl: d.purchaseUrl ?? null,
     price: d.price ?? null,
+    photoUrl: !d.photoFile
+      ? null
+      : d.photoFile.startsWith("seed:")
+        ? `/seed-photos/${d.photoFile.slice(5)}`
+        : // The key changes with every upload, so it doubles as a cache buster.
+          `/api/designs/${d.id}/photo?v=${encodeURIComponent(d.photoFile.split("/").pop()!)}`,
   };
 }
 
@@ -100,6 +118,13 @@ async function getDesign(id: string): Promise<Design | null> {
   if (record?.deleted) return null;
   if (seed) return { ...seed, ...record, id: seed.id, file: seed.file, contentType: seed.contentType };
   return record && isComplete(record) ? record : null;
+}
+
+export async function getDesignPhoto(id: string): Promise<{ data: Buffer; contentType: string } | null> {
+  const design = await getDesign(id);
+  if (!design?.photoFile || design.photoFile.startsWith("seed:")) return null;
+  const data = await (await getStorage()).readBytes(design.photoFile);
+  return data ? { data, contentType: design.photoContentType ?? "image/jpeg" } : null;
 }
 
 export async function getDesignImage(id: string): Promise<{ data: Buffer; contentType: string } | null> {
@@ -167,6 +192,7 @@ export async function deleteDesign(id: string): Promise<boolean> {
     await storage.remove(metaKey(id));
     await storage.remove(design.file);
   }
+  if (design.photoFile && !design.photoFile.startsWith("seed:")) await storage.remove(design.photoFile);
   return true;
 }
 
@@ -181,16 +207,47 @@ export async function updateDesign(
   else if (changes.purchaseUrl !== undefined) design.purchaseUrl = changes.purchaseUrl;
   if (changes.price === null) delete design.price;
   else if (changes.price !== undefined) design.price = changes.price;
+  await saveDesign(design);
+  return design;
+}
+
+async function saveDesign(design: Design) {
   const storage = await getStorage();
   if (design.file.startsWith("seed:")) {
+    const seed = SEEDS.find((s) => s.id === design.id);
     const override: StoredRecord = {
       name: design.name,
       ...(design.purchaseUrl ? { purchaseUrl: design.purchaseUrl } : {}),
       ...(design.price ? { price: design.price } : {}),
+      // Only store the photo when it differs from the built-in one.
+      ...(design.photoFile !== seed?.photoFile
+        ? { photoFile: design.photoFile ?? "", photoContentType: design.photoContentType }
+        : {}),
     };
-    await storage.writeJson(metaKey(id), override);
+    await storage.writeJson(metaKey(design.id), override);
   } else {
-    await storage.writeJson(metaKey(id), design);
+    await storage.writeJson(metaKey(design.id), design);
   }
+}
+
+/** Sets (or with `null`, removes) a design's gallery photo. */
+export async function setDesignPhoto(
+  id: string,
+  photo: { data: Buffer; type: { contentType: string; ext: string } } | null,
+): Promise<Design | null> {
+  const design = await getDesign(id);
+  if (!design) return null;
+  const storage = await getStorage();
+  const old = design.photoFile;
+  if (photo) {
+    design.photoFile = `photos/${id}-${randomUUID().slice(0, 8)}.${photo.type.ext}`;
+    design.photoContentType = photo.type.contentType;
+    await storage.writeBytes(design.photoFile, photo.data);
+  } else {
+    design.photoFile = "";
+    delete design.photoContentType;
+  }
+  await saveDesign(design);
+  if (old && !old.startsWith("seed:")) await storage.remove(old);
   return design;
 }
