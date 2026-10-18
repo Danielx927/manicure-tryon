@@ -161,7 +161,6 @@ export default function AdminPanel() {
               <span>{d.name}</span>
               {d.price && <span className="price">{formatPrice(d.price)}</span>}
               <DetailsEditor design={d} onSaved={(updated) => reload({ upsert: updated })} />
-              <PhotoEditor design={d} onSaved={(updated) => reload({ upsert: updated })} />
               <button type="button" className="btn small danger" onClick={() => remove(d.id, d.name)}>
                 Remove
               </button>
@@ -242,58 +241,5 @@ function DetailsEditor(props: { design: PublicDesign; onSaved: (design: PublicDe
       {state === "saved" && !dirty && <span className="ok">Saved</span>}
       {state === "error" && <span className="error">{error}</span>}
     </form>
-  );
-}
-
-/** The optional realistic photo shown on the gallery card. */
-function PhotoEditor(props: { design: PublicDesign; onSaved: (design: PublicDesign) => void }) {
-  const { design } = props;
-  const [state, setState] = useState<"idle" | "saving" | "error">("idle");
-  const [error, setError] = useState("");
-
-  const send = async (method: "PUT" | "DELETE", body?: FormData) => {
-    setState("saving");
-    const res = await fetch(`/api/designs/${design.id}/photo`, { method, body }).catch(() => null);
-    const json = res ? await res.json().catch(() => ({})) : {};
-    if (res?.ok) {
-      setState("idle");
-      props.onSaved(json.design);
-    } else {
-      setError(json.error ?? "Couldn't save the photo.");
-      setState("error");
-    }
-  };
-
-  const choose = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    if (file.size > 4 * 1024 * 1024) {
-      setError("That photo is over 4 MB. Please resize or compress it.");
-      setState("error");
-      return;
-    }
-    const data = new FormData();
-    data.set("photo", file);
-    send("PUT", data);
-  };
-
-  return (
-    <div className="photo-editor">
-      {design.photoUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={design.photoUrl} alt={`Photo of ${design.name}`} />
-      )}
-      <label className="btn small">
-        {state === "saving" ? "Saving…" : design.photoUrl ? "Replace photo" : "Add photo"}
-        <input type="file" accept="image/png,image/jpeg,image/webp" onChange={choose} disabled={state === "saving"} hidden />
-      </label>
-      {design.photoUrl && (
-        <button type="button" className="btn small" onClick={() => send("DELETE")} disabled={state === "saving"}>
-          Remove photo
-        </button>
-      )}
-      {state === "error" && <span className="error">{error}</span>}
-    </div>
   );
 }
