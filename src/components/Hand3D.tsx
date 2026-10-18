@@ -89,12 +89,36 @@ function prepareHand(scene: THREE.Group): PreparedHand {
     const boneRotation = scene.getObjectByName(baseName)!.getWorldQuaternion(new THREE.Quaternion());
     const up = new THREE.Vector3(0, 1, 0).applyQuaternion(boneRotation).transformDirection(toView);
     up.addScaledVector(dir, -up.dot(dir)).normalize();
-    fingers[finger] = { base, tip, up };
+    fingers[finger] = { base, tip, up: centreOnFingerTop(geometry, base, dir, up) };
   }
 
   const surface = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide }));
   surface.updateMatrixWorld(true);
   return { geometry, surface, fingers };
+}
+
+/**
+ * The bone's "up" axis can be rolled a little relative to the modelled finger,
+ * which pushes the nail off to one side (most visible on the thumb). Re-centre
+ * it on the average skin normal of the top of the last finger segment.
+ */
+function centreOnFingerTop(geometry: THREE.BufferGeometry, base: THREE.Vector3, dir: THREE.Vector3, up: THREE.Vector3) {
+  const pos = geometry.getAttribute("position");
+  const nrm = geometry.getAttribute("normal");
+  const p = new THREE.Vector3();
+  const n = new THREE.Vector3();
+  const sum = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    p.fromBufferAttribute(pos, i).sub(base);
+    const t = p.dot(dir);
+    if (t < 0 || t > 0.03) continue;
+    const radial = p.addScaledVector(dir, -t);
+    if (radial.length() > 0.014 || radial.dot(up) <= 0) continue;
+    n.fromBufferAttribute(nrm, i);
+    if (n.dot(up) > 0.25) sum.add(n);
+  }
+  sum.addScaledVector(dir, -sum.dot(dir));
+  return sum.lengthSq() > 0 ? sum.normalize() : up;
 }
 
 /**
@@ -113,18 +137,24 @@ function buildNail(hand: PreparedHand, finger: Finger, fit: FitSettings) {
     return ray.intersectObject(hand.surface, false);
   };
 
-  // Measure the finger's width across the nail by casting outwards from the
-  // bone, which sits inside the finger (casting inwards would hit neighbours).
-  const mid = base.clone().addScaledVector(along, segLen * 0.55);
-  const a = hitsFrom(mid, side)[0];
-  const b = hitsFrom(mid, side.clone().negate())[0];
-  const fingerWidth = a && b && a.distance + b.distance < segLen * 2.5 ? a.distance + b.distance : segLen * 1.3;
-
   // The tip joint sits inside the finger; find where the skin actually ends.
   const end = hitsFrom(base, along)[0];
   const reachToTip = end && end.distance < segLen * 2 ? end.distance : segLen;
 
-  const width = fingerWidth * (finger === "thumb" ? 0.78 : 0.74) * fit.size;
+  // Fingertips taper, so measure the width at two points along the nail and
+  // use the narrower one; otherwise the nail overhangs the side (the thumb).
+  // Rays go outwards from the bone, which sits inside the finger; casting
+  // inwards from outside would hit the neighbouring fingers.
+  const widthAt = (t: number) => {
+    const at = base.clone().addScaledVector(along, reachToTip * t);
+    const a = hitsFrom(at, side)[0];
+    const b = hitsFrom(at, side.clone().negate())[0];
+    return a && b && a.distance + b.distance < segLen * 2.5 ? a.distance + b.distance : Infinity;
+  };
+  const measured = Math.min(widthAt(0.45), widthAt(0.75));
+  const fingerWidth = Number.isFinite(measured) ? measured : segLen * 1.3;
+
+  const width = fingerWidth * (finger === "thumb" ? 0.7 : 0.74) * fit.size;
   const natural = reachToTip * 0.78 * fit.size;
   const length = natural * (1 + fit.extension);
   // The free edge of a natural-length nail lines up with the fingertip.
@@ -237,7 +267,7 @@ export default function Hand3D(props: {
       <directionalLight position={[0, 0.2, -1]} intensity={0.5} />
       <HandModel designs={props.designs} fit={props.fit} skinTone={props.skinTone} />
       <ContactShadows position={[0, -0.12, 0]} opacity={0.25} scale={0.5} blur={2.5} far={0.3} />
-      <OrbitControls enablePan={false} enableDamping minDistance={0.18} maxDistance={0.7} />
+      <OrbitControls makeDefault enablePan={false} enableDamping minDistance={0.18} maxDistance={0.7} />
     </Canvas>
   );
 }

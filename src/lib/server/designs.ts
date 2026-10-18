@@ -1,5 +1,6 @@
 import "server-only";
 import { randomUUID } from "node:crypto";
+import type { Price } from "@/lib/price";
 import { getStorage } from "./storage";
 
 export type Design = {
@@ -11,6 +12,8 @@ export type Design = {
   createdAt: string;
   /** Optional shop page where customers can buy this design. */
   purchaseUrl?: string;
+  /** Optional price shown to shoppers. */
+  price?: Price;
 };
 
 /**
@@ -56,6 +59,7 @@ export function toPublicDesign(d: Design) {
     // Built-in designs are static files; uploads are served by the API.
     imageUrl: d.file.startsWith("seed:") ? `/seed-designs/${d.file.slice(5)}` : `/api/designs/${d.id}/image`,
     purchaseUrl: d.purchaseUrl ?? null,
+    price: d.price ?? null,
   };
 }
 
@@ -84,6 +88,7 @@ export async function listDesigns(): Promise<Design[]> {
     if (override?.deleted) return [];
     const merged: Design = { ...seed, ...override, id: seed.id, file: seed.file, contentType: seed.contentType };
     if (!merged.purchaseUrl) delete merged.purchaseUrl;
+    if (!merged.price) delete merged.price;
     return [merged];
   });
   return [...uploads, ...seeds];
@@ -133,6 +138,7 @@ export async function addDesign(
   data: Buffer,
   type: { contentType: string; ext: string },
   purchaseUrl?: string,
+  price?: Price,
 ): Promise<Design> {
   const storage = await getStorage();
   const id = randomUUID();
@@ -145,6 +151,7 @@ export async function addDesign(
     contentType: type.contentType,
     createdAt: new Date().toISOString(),
     ...(purchaseUrl ? { purchaseUrl } : {}),
+    ...(price ? { price } : {}),
   };
   await storage.writeJson(metaKey(id), design);
   return design;
@@ -165,16 +172,22 @@ export async function deleteDesign(id: string): Promise<boolean> {
 
 export async function updateDesign(
   id: string,
-  changes: { name?: string; purchaseUrl?: string | null },
+  changes: { name?: string; purchaseUrl?: string | null; price?: Price | null },
 ): Promise<Design | null> {
   const design = await getDesign(id);
   if (!design) return null;
   if (changes.name !== undefined) design.name = changes.name;
   if (changes.purchaseUrl === null) delete design.purchaseUrl;
   else if (changes.purchaseUrl !== undefined) design.purchaseUrl = changes.purchaseUrl;
+  if (changes.price === null) delete design.price;
+  else if (changes.price !== undefined) design.price = changes.price;
   const storage = await getStorage();
   if (design.file.startsWith("seed:")) {
-    const override: StoredRecord = { name: design.name, ...(design.purchaseUrl ? { purchaseUrl: design.purchaseUrl } : {}) };
+    const override: StoredRecord = {
+      name: design.name,
+      ...(design.purchaseUrl ? { purchaseUrl: design.purchaseUrl } : {}),
+      ...(design.price ? { price: design.price } : {}),
+    };
     await storage.writeJson(metaKey(id), override);
   } else {
     await storage.writeJson(metaKey(id), design);

@@ -8,9 +8,9 @@ Try preset manicure designs on a rotatable 3D hand.
 - Users can drag to rotate and scroll or pinch to zoom, put different designs on different fingers, change nail
   length and size, pick a skin tone, and save a picture.
 - **Designs** come from a preset gallery. Only admins can add, remove or edit them, at `/admin`.
-- Each design can carry an optional **purchase link** (http/https only), set when uploading or edited later in the
-  admin gallery. The try-on page shows a "Buy" link on those gallery cards and a "Shop this look" list of the designs
-  currently applied.
+- Each design can carry an optional **price** (amount and currency) and an optional **purchase link** (http/https only), set when uploading or edited later in the
+  admin gallery. The try-on page shows prices and "Buy" links on the gallery cards, and a "Shop this look" list of the
+  designs currently applied, with a total when they share a currency.
 
 ## Running it
 

@@ -65,24 +65,41 @@ function fileStorage(): Storage {
 /** Netlify Blobs; serverless functions have no persistent disk. */
 async function netlifyStorage(): Promise<Storage> {
   const { getStore } = await import("@netlify/blobs");
-  // Default (eventual) consistency: "strong" needs an uncached edge URL that
-  // Netlify's Next.js functions don't always provide, and then every read throws.
-  const store = getStore({ name: "nail-designs" });
+  type Store = ReturnType<typeof getStore>;
+  // Reads prefer strong consistency so a new upload shows up straight away.
+  // That needs an uncached edge URL that Netlify doesn't always provide; when
+  // it's missing every strong read throws, so fall back to the default
+  // (eventual) mode, where changes can take up to a minute to appear.
+  const strong = getStore({ name: "nail-designs", consistency: "strong" });
+  const eventual = getStore({ name: "nail-designs" });
+  let strongAvailable = true;
+  async function read<T>(op: (store: Store) => Promise<T>): Promise<T> {
+    if (strongAvailable) {
+      try {
+        return await op(strong);
+      } catch (err) {
+        if (!String((err as Error)?.message).includes("uncachedEdgeURL")) throw err;
+        strongAvailable = false;
+        console.warn("[designs] Netlify Blobs strong consistency unavailable; using eventual consistency");
+      }
+    }
+    return op(eventual);
+  }
   return {
-    readJson: (key) => store.get(key, { type: "json" }),
+    readJson: (key) => read((store) => store.get(key, { type: "json" })),
     async writeJson(key, value) {
-      await store.setJSON(key, value);
+      await eventual.setJSON(key, value);
     },
     async readBytes(key) {
-      const data: ArrayBuffer | null = await store.get(key, { type: "arrayBuffer" });
+      const data: ArrayBuffer | null = await read((store) => store.get(key, { type: "arrayBuffer" }));
       return data ? Buffer.from(data) : null;
     },
     async writeBytes(key, data) {
-      await store.set(key, new Uint8Array(data).buffer);
+      await eventual.set(key, new Uint8Array(data).buffer);
     },
-    remove: (key) => store.delete(key),
+    remove: (key) => eventual.delete(key),
     async list(prefix) {
-      const { blobs } = await store.list({ prefix });
+      const { blobs } = await read((store) => store.list({ prefix }));
       return blobs.map((b) => b.key);
     },
   };

@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FINGERS, FINGER_LABELS, type Finger } from "@/lib/fingers";
+import { formatPrice } from "@/lib/price";
 import { DEFAULT_FIT, type FitSettings, type NailShape } from "@/lib/renderNails";
 import { SKIN_TONES } from "./skinTones";
 import { useDesigns, type PublicDesign } from "./useDesigns";
@@ -97,6 +98,14 @@ export default function TryOn() {
     [designs, assigned],
   );
 
+  // Only total when every applied design has a price in the same currency.
+  const total = useMemo(() => {
+    const prices = appliedDesigns.map((d) => d.price);
+    if (prices.length === 0 || prices.some((p) => !p || p.currency !== prices[0]!.currency)) return null;
+    const amount = prices.reduce((sum, p) => sum + p!.amount, 0);
+    return formatPrice({ amount: Math.round(amount * 100) / 100, currency: prices[0]!.currency });
+  }, [appliedDesigns]);
+
   return (
     <div className="tryon">
       <section className="stage">
@@ -120,6 +129,7 @@ export default function TryOn() {
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={d.imageUrl} alt="" />
                   <span>{d.name}</span>
+                  <span className="shop-price">{d.price ? formatPrice(d.price) : ""}</span>
                   {d.purchaseUrl ? (
                     <a className="btn small primary" href={d.purchaseUrl} target="_blank" rel="noopener noreferrer">
                       Buy this design
@@ -130,6 +140,7 @@ export default function TryOn() {
                 </li>
               ))}
             </ul>
+            {total && appliedDesigns.length > 1 && <p className="shop-total">Total {total}</p>}
           </div>
         )}
 
@@ -168,6 +179,7 @@ export default function TryOn() {
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={d.imageUrl} alt="" loading="lazy" />
                   <span>{d.name}</span>
+                  {d.price && <span className="price">{formatPrice(d.price)}</span>}
                 </button>
                 {d.purchaseUrl && (
                   <a className="buy-link" href={d.purchaseUrl} target="_blank" rel="noopener noreferrer">

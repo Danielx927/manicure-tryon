@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { parsePrice } from "@/lib/price";
 import { isAdmin } from "@/lib/server/auth";
 import { serverError } from "@/lib/server/errors";
 import {
@@ -34,6 +35,8 @@ export async function POST(request: Request) {
   if (purchaseUrl === null) {
     return NextResponse.json({ error: "The purchase link must be a full web address starting with https://" }, { status: 400 });
   }
+  const price = parsePrice(form?.get("priceAmount"), form?.get("priceCurrency"));
+  if (price && "error" in price) return NextResponse.json({ error: price.error }, { status: 400 });
   if (!(file instanceof File)) return NextResponse.json({ error: "Please choose an image." }, { status: 400 });
   if (file.size > MAX_UPLOAD_BYTES) {
     return NextResponse.json({ error: "Images must be 4 MB or smaller." }, { status: 413 });
@@ -43,7 +46,7 @@ export async function POST(request: Request) {
   if (!type) return NextResponse.json({ error: "Only PNG, JPEG or WebP images are accepted." }, { status: 415 });
 
   try {
-    const design = await addDesign(name, data, type, purchaseUrl);
+    const design = await addDesign(name, data, type, purchaseUrl, price ?? undefined);
     return NextResponse.json({ design: toPublicDesign(design) }, { status: 201 });
   } catch (err) {
     return serverError("save the design", err);

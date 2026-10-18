@@ -431,7 +431,7 @@ a.btn {
 
 .shop li {
   display: grid;
-  grid-template-columns: 28px 1fr auto;
+  grid-template-columns: 28px 1fr auto auto;
   align-items: center;
   gap: 10px;
 }
@@ -459,4 +459,47 @@ a.btn {
 
 .link-editor .btn {
   align-self: center;
+}
+
+/* Prices */
+.price {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.price-row {
+  display: grid;
+  grid-template-columns: 1fr 120px;
+  gap: 12px;
+}
+
+.card select,
+.link-editor select {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 6px;
+  font: inherit;
+  background: var(--surface);
+}
+
+.price-inline {
+  display: grid;
+  grid-template-columns: 1fr 64px;
+  gap: 4px;
+}
+
+.price-inline select {
+  font-size: 0.7rem;
+  padding: 4px 2px;
+}
+
+.shop .shop-price {
+  font-weight: 600;
+}
+
+.shop-total {
+  margin: 10px 0 0;
+  text-align: right;
+  font-weight: 600;
 }

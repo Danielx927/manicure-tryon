@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useDesigns } from "./useDesigns";
+import { CURRENCIES, DEFAULT_CURRENCY, formatPrice } from "@/lib/price";
+import { useDesigns, type PublicDesign } from "./useDesigns";
 
 type Session = { configured: boolean; admin: boolean };
 
@@ -64,7 +65,7 @@ export default function AdminPanel() {
     if (res.ok) {
       form.reset();
       setMessage({ kind: "ok", text: `Added “${body.design.name}” to the gallery.` });
-      reload();
+      reload({ upsert: body.design });
     } else {
       if (res.status === 401) setSession((s) => (s ? { ...s, admin: false } : s));
       setMessage({ kind: "error", text: body.error ?? `Upload failed (server responded ${res.status}).` });
@@ -74,7 +75,7 @@ export default function AdminPanel() {
   const remove = async (id: string, name: string) => {
     if (!window.confirm(`Remove “${name}” from the gallery?`)) return;
     const res = await fetch(`/api/designs/${id}`, { method: "DELETE" });
-    if (res.ok) reload();
+    if (res.ok) reload({ removedId: id });
     else setMessage({ kind: "error", text: "Couldn't remove that design." });
   };
 
@@ -126,6 +127,20 @@ export default function AdminPanel() {
           Purchase link (optional)
           <input name="purchaseUrl" type="url" placeholder="https://shop.example.com/cherry-blossom" />
         </label>
+        <div className="price-row">
+          <label>
+            Price (optional)
+            <input name="priceAmount" inputMode="decimal" placeholder="e.g. 12.50" pattern="\d+(\.\d{1,2})?" />
+          </label>
+          <label>
+            Currency
+            <select name="priceCurrency" defaultValue={DEFAULT_CURRENCY}>
+              {CURRENCIES.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+            </select>
+          </label>
+        </div>
         <label>
           Image
           <input name="image" type="file" accept="image/png,image/jpeg,image/webp" required />
@@ -144,7 +159,8 @@ export default function AdminPanel() {
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={d.imageUrl} alt="" />
               <span>{d.name}</span>
-              <PurchaseLinkEditor id={d.id} value={d.purchaseUrl} onSaved={reload} />
+              {d.price && <span className="price">{formatPrice(d.price)}</span>}
+              <DetailsEditor design={d} onSaved={(updated) => reload({ upsert: updated })} />
               <button type="button" className="btn small danger" onClick={() => remove(d.id, d.name)}>
                 Remove
               </button>
@@ -156,26 +172,40 @@ export default function AdminPanel() {
   );
 }
 
-function PurchaseLinkEditor(props: { id: string; value: string | null; onSaved: () => void }) {
-  const [url, setUrl] = useState(props.value ?? "");
+function DetailsEditor(props: { design: PublicDesign; onSaved: (design: PublicDesign) => void }) {
+  const { design } = props;
+  const initial = {
+    url: design.purchaseUrl ?? "",
+    amount: design.price ? String(design.price.amount) : "",
+    currency: design.price?.currency ?? DEFAULT_CURRENCY,
+  };
+  const [url, setUrl] = useState(initial.url);
+  const [amount, setAmount] = useState(initial.amount);
+  const [currency, setCurrency] = useState(initial.currency);
   const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState("");
-  const dirty = url.trim() !== (props.value ?? "");
+  const dirty =
+    url.trim() !== initial.url || amount.trim() !== initial.amount || (amount.trim() !== "" && currency !== initial.currency);
+
+  const edit = <T,>(set: (v: T) => void) => (v: T) => {
+    set(v);
+    setState("idle");
+  };
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setState("saving");
-    const res = await fetch(`/api/designs/${props.id}`, {
+    const res = await fetch(`/api/designs/${design.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ purchaseUrl: url }),
-    });
-    if (res.ok) {
+      body: JSON.stringify({ purchaseUrl: url, price: amount.trim() ? { amount: amount.trim(), currency } : null }),
+    }).catch(() => null);
+    const body = res ? await res.json().catch(() => ({})) : {};
+    if (res?.ok) {
       setState("saved");
-      props.onSaved();
+      props.onSaved(body.design);
     } else {
-      const body = await res.json().catch(() => ({}));
-      setError(body.error ?? "Couldn't save the link.");
+      setError(body.error ?? "Couldn't save.");
       setState("error");
     }
   };
@@ -185,16 +215,27 @@ function PurchaseLinkEditor(props: { id: string; value: string | null; onSaved: 
       <input
         type="url"
         value={url}
-        onChange={(e) => {
-          setUrl(e.target.value);
-          setState("idle");
-        }}
+        onChange={(e) => edit(setUrl)(e.target.value)}
         placeholder="Purchase link"
         aria-label="Purchase link"
       />
+      <div className="price-inline">
+        <input
+          value={amount}
+          onChange={(e) => edit(setAmount)(e.target.value)}
+          inputMode="decimal"
+          placeholder="Price"
+          aria-label="Price"
+        />
+        <select value={currency} onChange={(e) => edit(setCurrency)(e.target.value)} aria-label="Currency">
+          {CURRENCIES.map((c) => (
+            <option key={c}>{c}</option>
+          ))}
+        </select>
+      </div>
       {dirty && (
         <button className="btn small" disabled={state === "saving"}>
-          Save link
+          Save
         </button>
       )}
       {state === "saved" && !dirty && <span className="ok">Saved</span>}

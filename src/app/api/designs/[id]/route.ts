@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { parsePrice, type Price } from "@/lib/price";
 import { isAdmin } from "@/lib/server/auth";
 import { serverError } from "@/lib/server/errors";
 import { deleteDesign, parsePurchaseUrl, toPublicDesign, updateDesign } from "@/lib/server/designs";
@@ -8,8 +9,12 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/designs/[i
   if (!(await isAdmin())) {
     return NextResponse.json({ error: "Only admins can edit designs." }, { status: 401 });
   }
-  const body = (await request.json().catch(() => null)) as { name?: unknown; purchaseUrl?: unknown } | null;
-  const changes: { name?: string; purchaseUrl?: string | null } = {};
+  const body = (await request.json().catch(() => null)) as {
+    name?: unknown;
+    purchaseUrl?: unknown;
+    price?: { amount?: unknown; currency?: unknown } | null;
+  } | null;
+  const changes: { name?: string; purchaseUrl?: string | null; price?: Price | null } = {};
   if (typeof body?.name === "string") {
     const name = body.name.trim().slice(0, 60);
     if (!name) return NextResponse.json({ error: "Please give the design a name." }, { status: 400 });
@@ -25,6 +30,11 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/designs/[i
       }
       changes.purchaseUrl = url;
     }
+  }
+  if (body && "price" in body) {
+    const price = body.price ? parsePrice(body.price.amount, body.price.currency) : null;
+    if (price && "error" in price) return NextResponse.json({ error: price.error }, { status: 400 });
+    changes.price = price;
   }
   const { id } = await ctx.params;
   try {
