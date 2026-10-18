@@ -4,3 +4,8 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+# Declared explicitly so the Next.js runtime (server functions for the API
+# routes and page routing) always runs, even if auto-detection is off.
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
