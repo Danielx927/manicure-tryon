@@ -1,14 +1,16 @@
 import "server-only";
-import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-/** Where the design index and uploaded images live. */
+/** Where design records and uploaded images live. */
 export interface Storage {
   readJson<T>(key: string): Promise<T | null>;
   writeJson(key: string, value: unknown): Promise<void>;
   readBytes(key: string): Promise<Buffer | null>;
   writeBytes(key: string, data: Buffer): Promise<void>;
   remove(key: string): Promise<void>;
+  /** Keys starting with `prefix` (a "folder/" prefix). */
+  list(prefix: string): Promise<string[]>;
 }
 
 /** Local disk under DATA_DIR (default ./data); for `npm start` on a normal server. */
@@ -48,13 +50,24 @@ function fileStorage(): Storage {
     async remove(key) {
       await unlink(full(key)).catch(() => undefined);
     },
+    async list(prefix) {
+      try {
+        const names = await readdir(full(prefix));
+        return names.filter((n) => !n.endsWith(".tmp")).map((n) => `${prefix}${n}`);
+      } catch (err) {
+        if (missing(err)) return [];
+        throw err;
+      }
+    },
   };
 }
 
 /** Netlify Blobs; serverless functions have no persistent disk. */
 async function netlifyStorage(): Promise<Storage> {
   const { getStore } = await import("@netlify/blobs");
-  const store = getStore({ name: "nail-designs", consistency: "strong" });
+  // Default (eventual) consistency: "strong" needs an uncached edge URL that
+  // Netlify's Next.js functions don't always provide, and then every read throws.
+  const store = getStore({ name: "nail-designs" });
   return {
     readJson: (key) => store.get(key, { type: "json" }),
     async writeJson(key, value) {
@@ -68,6 +81,10 @@ async function netlifyStorage(): Promise<Storage> {
       await store.set(key, new Uint8Array(data).buffer);
     },
     remove: (key) => store.delete(key),
+    async list(prefix) {
+      const { blobs } = await store.list({ prefix });
+      return blobs.map((b) => b.key);
+    },
   };
 }
 

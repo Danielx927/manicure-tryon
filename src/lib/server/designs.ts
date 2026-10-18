@@ -13,45 +13,39 @@ export type Design = {
   purchaseUrl?: string;
 };
 
-const INDEX_KEY = "designs.json";
+/**
+ * Each design is stored as its own record under meta/<id>.json, so there is no
+ * shared index that two writes could overwrite (Netlify Blobs is eventually
+ * consistent). Built-in designs only get a record once an admin edits or
+ * removes them; the record then holds just the changes.
+ */
+type StoredRecord = Partial<Design> & { deleted?: boolean };
 
-const SEEDS: Array<[string, string]> = [
-  ["classic-red", "Classic Red"],
-  ["french-tip", "French Tip"],
-  ["blush-nude", "Blush Nude"],
-  ["sunset-ombre", "Sunset Ombre"],
-  ["polka-dots", "Polka Dots"],
-  ["gold-glitter", "Gold Glitter"],
-  ["midnight-marble", "Midnight Marble"],
-  ["daisy", "Daisy"],
-];
+const META_PREFIX = "meta/";
+const metaKey = (id: string) => `${META_PREFIX}${id}.json`;
 
-export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const SEED_CREATED_AT = "2026-10-17T00:00:00.000Z";
+const SEEDS: Design[] = (
+  [
+    ["classic-red", "Classic Red"],
+    ["french-tip", "French Tip"],
+    ["blush-nude", "Blush Nude"],
+    ["sunset-ombre", "Sunset Ombre"],
+    ["polka-dots", "Polka Dots"],
+    ["gold-glitter", "Gold Glitter"],
+    ["midnight-marble", "Midnight Marble"],
+    ["daisy", "Daisy"],
+  ] as const
+).map(([slug, name]) => ({
+  id: `seed-${slug}`,
+  name,
+  file: `seed:${slug}.svg`,
+  contentType: "image/svg+xml",
+  createdAt: SEED_CREATED_AT,
+}));
 
-// Serialise writes to the index so concurrent admin actions don't clobber it.
-let queue: Promise<unknown> = Promise.resolve();
-function withLock<T>(fn: () => Promise<T>): Promise<T> {
-  const run = queue.then(fn, fn);
-  queue = run.catch(() => undefined);
-  return run;
-}
-
-async function readIndex(): Promise<Design[]> {
-  const stored = await (await getStorage()).readJson<Design[]>(INDEX_KEY);
-  if (stored) return stored;
-  const createdAt = new Date().toISOString();
-  return SEEDS.map(([slug, name]) => ({
-    id: `seed-${slug}`,
-    name,
-    file: `seed:${slug}.svg`,
-    contentType: "image/svg+xml",
-    createdAt,
-  }));
-}
-
-async function writeIndex(designs: Design[]) {
-  await (await getStorage()).writeJson(INDEX_KEY, designs);
-}
+// Netlify Functions cap request bodies at about 6 MB, and multipart encoding adds overhead.
+export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 /** The shape sent to browsers: no file paths. */
 export function toPublicDesign(d: Design) {
@@ -65,12 +59,46 @@ export function toPublicDesign(d: Design) {
   };
 }
 
-export function listDesigns(): Promise<Design[]> {
-  return readIndex();
+async function readRecords(): Promise<Map<string, StoredRecord>> {
+  const storage = await getStorage();
+  const keys = await storage.list(META_PREFIX);
+  const entries = await Promise.all(
+    keys.map(async (key) => [key.slice(META_PREFIX.length, -".json".length), await storage.readJson<StoredRecord>(key)] as const),
+  );
+  return new Map(entries.filter((e): e is [string, StoredRecord] => e[1] !== null));
+}
+
+function isComplete(r: StoredRecord): r is Design {
+  return Boolean(r.id && r.name && r.file && r.contentType && r.createdAt);
+}
+
+/** Newest uploads first, then the built-in designs in their usual order. */
+export async function listDesigns(): Promise<Design[]> {
+  const records = await readRecords();
+  const uploads = [...records.values()]
+    .filter((r) => !r.deleted && isComplete(r) && !r.file!.startsWith("seed:"))
+    .map((r) => r as Design)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const seeds = SEEDS.flatMap((seed) => {
+    const override = records.get(seed.id);
+    if (override?.deleted) return [];
+    const merged: Design = { ...seed, ...override, id: seed.id, file: seed.file, contentType: seed.contentType };
+    if (!merged.purchaseUrl) delete merged.purchaseUrl;
+    return [merged];
+  });
+  return [...uploads, ...seeds];
+}
+
+async function getDesign(id: string): Promise<Design | null> {
+  const seed = SEEDS.find((s) => s.id === id);
+  const record = await (await getStorage()).readJson<StoredRecord>(metaKey(id));
+  if (record?.deleted) return null;
+  if (seed) return { ...seed, ...record, id: seed.id, file: seed.file, contentType: seed.contentType };
+  return record && isComplete(record) ? record : null;
 }
 
 export async function getDesignImage(id: string): Promise<{ data: Buffer; contentType: string } | null> {
-  const design = (await readIndex()).find((d) => d.id === id);
+  const design = await getDesign(id);
   if (!design || design.file.startsWith("seed:")) return null;
   const data = await (await getStorage()).readBytes(design.file);
   return data ? { data, contentType: design.contentType } : null;
@@ -100,55 +128,56 @@ export function parsePurchaseUrl(raw: string): string | null {
   }
 }
 
-export function addDesign(
+export async function addDesign(
   name: string,
   data: Buffer,
   type: { contentType: string; ext: string },
   purchaseUrl?: string,
 ): Promise<Design> {
-  return withLock(async () => {
-    const id = randomUUID();
-    const file = `designs/${id}.${type.ext}`;
-    await (await getStorage()).writeBytes(file, data);
-    const design: Design = {
-      id,
-      name,
-      file,
-      contentType: type.contentType,
-      createdAt: new Date().toISOString(),
-      ...(purchaseUrl ? { purchaseUrl } : {}),
-    };
-    const designs = await readIndex();
-    await writeIndex([design, ...designs]);
-    return design;
-  });
+  const storage = await getStorage();
+  const id = randomUUID();
+  const file = `designs/${id}.${type.ext}`;
+  await storage.writeBytes(file, data);
+  const design: Design = {
+    id,
+    name,
+    file,
+    contentType: type.contentType,
+    createdAt: new Date().toISOString(),
+    ...(purchaseUrl ? { purchaseUrl } : {}),
+  };
+  await storage.writeJson(metaKey(id), design);
+  return design;
 }
 
-export function deleteDesign(id: string): Promise<boolean> {
-  return withLock(async () => {
-    const designs = await readIndex();
-    const design = designs.find((d) => d.id === id);
-    if (!design) return false;
-    await writeIndex(designs.filter((d) => d.id !== id));
-    if (!design.file.startsWith("seed:")) {
-      await (await getStorage()).remove(design.file);
-    }
-    return true;
-  });
+export async function deleteDesign(id: string): Promise<boolean> {
+  const design = await getDesign(id);
+  if (!design) return false;
+  const storage = await getStorage();
+  if (design.file.startsWith("seed:")) {
+    await storage.writeJson(metaKey(id), { deleted: true } satisfies StoredRecord);
+  } else {
+    await storage.remove(metaKey(id));
+    await storage.remove(design.file);
+  }
+  return true;
 }
 
-export function updateDesign(
+export async function updateDesign(
   id: string,
   changes: { name?: string; purchaseUrl?: string | null },
 ): Promise<Design | null> {
-  return withLock(async () => {
-    const designs = await readIndex();
-    const design = designs.find((d) => d.id === id);
-    if (!design) return null;
-    if (changes.name !== undefined) design.name = changes.name;
-    if (changes.purchaseUrl === null) delete design.purchaseUrl;
-    else if (changes.purchaseUrl !== undefined) design.purchaseUrl = changes.purchaseUrl;
-    await writeIndex(designs);
-    return design;
-  });
+  const design = await getDesign(id);
+  if (!design) return null;
+  if (changes.name !== undefined) design.name = changes.name;
+  if (changes.purchaseUrl === null) delete design.purchaseUrl;
+  else if (changes.purchaseUrl !== undefined) design.purchaseUrl = changes.purchaseUrl;
+  const storage = await getStorage();
+  if (design.file.startsWith("seed:")) {
+    const override: StoredRecord = { name: design.name, ...(design.purchaseUrl ? { purchaseUrl: design.purchaseUrl } : {}) };
+    await storage.writeJson(metaKey(id), override);
+  } else {
+    await storage.writeJson(metaKey(id), design);
+  }
+  return design;
 }

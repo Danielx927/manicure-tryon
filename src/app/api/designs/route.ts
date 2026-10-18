@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/server/auth";
+import { serverError } from "@/lib/server/errors";
 import {
   MAX_UPLOAD_BYTES,
   addDesign,
@@ -12,8 +13,12 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const designs = await listDesigns();
-  return NextResponse.json({ designs: designs.map(toPublicDesign) });
+  try {
+    const designs = await listDesigns();
+    return NextResponse.json({ designs: designs.map(toPublicDesign) });
+  } catch (err) {
+    return serverError("load the gallery", err);
+  }
 }
 
 export async function POST(request: Request) {
@@ -31,12 +36,16 @@ export async function POST(request: Request) {
   }
   if (!(file instanceof File)) return NextResponse.json({ error: "Please choose an image." }, { status: 400 });
   if (file.size > MAX_UPLOAD_BYTES) {
-    return NextResponse.json({ error: "Images must be 5 MB or smaller." }, { status: 413 });
+    return NextResponse.json({ error: "Images must be 4 MB or smaller." }, { status: 413 });
   }
   const data = Buffer.from(await file.arrayBuffer());
   const type = sniffImageType(data);
   if (!type) return NextResponse.json({ error: "Only PNG, JPEG or WebP images are accepted." }, { status: 415 });
 
-  const design = await addDesign(name, data, type, purchaseUrl);
-  return NextResponse.json({ design: toPublicDesign(design) }, { status: 201 });
+  try {
+    const design = await addDesign(name, data, type, purchaseUrl);
+    return NextResponse.json({ design: toPublicDesign(design) }, { status: 201 });
+  } catch (err) {
+    return serverError("save the design", err);
+  }
 }

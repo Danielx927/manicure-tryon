@@ -46,10 +46,20 @@ export default function AdminPanel() {
   const upload = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.currentTarget;
+    const data = new FormData(form);
+    const image = data.get("image");
+    if (image instanceof File && image.size > 4 * 1024 * 1024) {
+      setMessage({ kind: "error", text: "That image is over 4 MB. Please resize or compress it and try again." });
+      return;
+    }
     setBusy(true);
     setMessage(null);
-    const res = await fetch("/api/designs", { method: "POST", body: new FormData(form) });
+    const res = await fetch("/api/designs", { method: "POST", body: data }).catch(() => null);
     setBusy(false);
+    if (!res) {
+      setMessage({ kind: "error", text: "Couldn't reach the server. Check your connection and try again." });
+      return;
+    }
     const body = await res.json().catch(() => ({}));
     if (res.ok) {
       form.reset();
@@ -57,7 +67,7 @@ export default function AdminPanel() {
       reload();
     } else {
       if (res.status === 401) setSession((s) => (s ? { ...s, admin: false } : s));
-      setMessage({ kind: "error", text: body.error ?? "Upload failed." });
+      setMessage({ kind: "error", text: body.error ?? `Upload failed (server responded ${res.status}).` });
     }
   };
 
@@ -105,7 +115,7 @@ export default function AdminPanel() {
           </button>
         </div>
         <p className="muted">
-          PNG, JPEG or WebP up to 5 MB. Use a portrait image with the nail tip at the top and the cuticle at the bottom; it is
+          PNG, JPEG or WebP up to 4 MB. Use a portrait image with the nail tip at the top and the cuticle at the bottom; it is
           cropped to each nail&apos;s shape.
         </p>
         <label>

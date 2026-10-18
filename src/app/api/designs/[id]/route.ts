@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isAdmin } from "@/lib/server/auth";
+import { serverError } from "@/lib/server/errors";
 import { deleteDesign, parsePurchaseUrl, toPublicDesign, updateDesign } from "@/lib/server/designs";
 
 /** Update a design's name and/or purchase link. An empty purchaseUrl removes it. */
@@ -26,10 +27,14 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/designs/[i
     }
   }
   const { id } = await ctx.params;
-  const design = await updateDesign(id, changes);
-  return design
-    ? NextResponse.json({ design: toPublicDesign(design) })
-    : NextResponse.json({ error: "Design not found." }, { status: 404 });
+  try {
+    const design = await updateDesign(id, changes);
+    return design
+      ? NextResponse.json({ design: toPublicDesign(design) })
+      : NextResponse.json({ error: "Design not found." }, { status: 404 });
+  } catch (err) {
+    return serverError("update the design", err);
+  }
 }
 
 export async function DELETE(_request: Request, ctx: RouteContext<"/api/designs/[id]">) {
@@ -37,8 +42,12 @@ export async function DELETE(_request: Request, ctx: RouteContext<"/api/designs/
     return NextResponse.json({ error: "Only admins can remove designs." }, { status: 401 });
   }
   const { id } = await ctx.params;
-  const removed = await deleteDesign(id);
-  return removed
-    ? new NextResponse(null, { status: 204 })
-    : NextResponse.json({ error: "Design not found." }, { status: 404 });
+  try {
+    const removed = await deleteDesign(id);
+    return removed
+      ? new NextResponse(null, { status: 204 })
+      : NextResponse.json({ error: "Design not found." }, { status: 404 });
+  } catch (err) {
+    return serverError("remove the design", err);
+  }
 }

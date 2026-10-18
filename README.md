@@ -28,12 +28,13 @@ uploaded designs.
 1. Push this repo to GitHub, then in Netlify choose **Add new site → Import an existing project** and pick it.
    `netlify.toml` already sets the build and the Next.js runtime.
 2. Under **Site configuration → Environment variables** add `ADMIN_PASSWORD` (and optionally `SESSION_SECRET`).
-3. Deploy. On Netlify, uploaded designs and the gallery list are stored in Netlify Blobs (store `nail-designs`),
-   chosen automatically at build time; see `src/lib/server/storage.ts`.
+3. Deploy. On Netlify, uploaded designs are stored in Netlify Blobs (store `nail-designs`), chosen automatically
+   at build time; see `src/lib/server/storage.ts`. Each design is its own record (`meta/<id>.json`), so concurrent
+   edits can't overwrite each other. New uploads can take a few seconds to show up in the gallery.
 
 ## Design images
 
-PNG, JPEG or WebP, up to 5 MB. Portrait orientation with the **nail tip at the top** and the cuticle at the
+PNG, JPEG or WebP, up to 4 MB (Netlify caps request size). Portrait orientation with the **nail tip at the top** and the cuticle at the
 bottom; the image is cropped to each nail like `object-fit: cover`. Eight built-in designs live in
 `public/seed-designs/` and are shown until an admin changes the gallery.
 
