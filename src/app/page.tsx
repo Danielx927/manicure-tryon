@@ -5,7 +5,7 @@ export default function Home() {
     <main className="container">
       <header className="hero">
         <h1>Nail Try-On</h1>
-        <p>Upload a photo of your hand and see how each design looks on your nails.</p>
+        <p>Pick a design and turn the hand to see it from every angle.</p>
       </header>
       <TryOn />
     </main>

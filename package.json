@@ -3,8 +3,6 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "setup-assets": "node scripts/setup-assets.mjs",
-    "postinstall": "node scripts/setup-assets.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -12,18 +10,21 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@mediapipe/tasks-vision": "^1.1.1",
     "@netlify/blobs": "^11.1.4",
+    "@react-three/drei": "^10.7.9",
+    "@react-three/fiber": "^9.8.2",
     "next": "16.4.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "three": "^0.186.1"
   },
   "devDependencies": {
     "@netlify/plugin-nextjs": "^5.16.2",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.186.0",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
     "typescript": "^5"

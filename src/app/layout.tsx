@@ -9,7 +9,7 @@ const geistSans = Geist({
 
 export const metadata: Metadata = {
   title: "Nail Try-On",
-  description: "Try manicure designs on a photo of your own hand.",
+  description: "Try manicure designs on a rotatable 3D hand.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
