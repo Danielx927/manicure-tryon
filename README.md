@@ -7,6 +7,13 @@ Try preset manicure designs on a rotatable 3D hand.
   it follows the finger's curve. Designs are clipped to the chosen nail shape (round, square or almond).
 - Users can drag to rotate and scroll or pinch to zoom, put different designs on different fingers, change nail
   length and size, pick a skin tone, and save a picture.
+- **Scan my hand** opens the front camera with a hand outline. The user holds the back of their hand inside it and
+  turns it slowly; MediaPipe hand tracking (self-hosted, runs in the browser) measures finger lengths, palm width
+  and skin tone, and the 3D hand's skeleton is reshaped to match. The measurements are compared with what the same
+  scan measures on the built-in model (`REFERENCE_PROFILE` in `src/lib/handProfile.ts`), which cancels out the
+  tracker's own biases. The scan is kept only in the browser's local storage; no video leaves the device.
+- **Try on with camera** draws the chosen designs onto the user's real nails in the live camera view, with
+  everything except the hands blacked out, and can save a photo.
 - **Designs** come from a preset gallery. Only admins can add, remove or edit them, at `/admin`.
 - Each design can carry an optional **price** (amount and currency) and an optional **purchase link** (http/https only), set when uploading or edited later in the
   admin gallery. The try-on page shows prices and "Buy" links on the gallery cards, and a "Shop this look" list of the
@@ -15,7 +22,7 @@ Try preset manicure designs on a rotatable 3D hand.
 ## Running it
 
 ```bash
-npm install
+npm install            # also copies the hand tracking runtime and model into public/ (scripts/setup-assets.mjs)
 cp .env.example .env.local   # then set ADMIN_PASSWORD
 npm run dev            # http://localhost:3000, admin at http://localhost:3000/admin
 ```

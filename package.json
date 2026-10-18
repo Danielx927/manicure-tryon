@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "setup-assets": "node scripts/setup-assets.mjs",
+    "postinstall": "node scripts/setup-assets.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -10,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^1.1.1",
     "@netlify/blobs": "^11.1.4",
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",

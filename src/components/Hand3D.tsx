@@ -5,7 +5,9 @@ import { ContactShadows, OrbitControls } from "@react-three/drei";
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { clone as cloneSkinned } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { FINGERS, type Finger } from "@/lib/fingers";
+import { REFERENCE_PROFILE, type HandProfile } from "@/lib/handProfile";
 import { paintNailTexture, type FitSettings } from "@/lib/renderNails";
 
 // Generic right hand from @webxr-input-profiles/assets (MIT, see public/hand/LICENSE.txt).
@@ -19,6 +21,76 @@ const DISTAL_BONES: Record<Finger, [string, string]> = {
   pinky: ["pinky-finger-phalanx-distal", "pinky-finger-tip"],
 };
 
+/** Bones matching MediaPipe's landmarks for each finger, base joint to tip. */
+const FINGER_BONES: Record<Finger, [string, string, string, string]> = {
+  thumb: ["thumb-metacarpal", "thumb-phalanx-proximal", "thumb-phalanx-distal", "thumb-tip"],
+  index: ["index-finger-phalanx-proximal", "index-finger-phalanx-intermediate", "index-finger-phalanx-distal", "index-finger-tip"],
+  middle: ["middle-finger-phalanx-proximal", "middle-finger-phalanx-intermediate", "middle-finger-phalanx-distal", "middle-finger-tip"],
+  ring: ["ring-finger-phalanx-proximal", "ring-finger-phalanx-intermediate", "ring-finger-phalanx-distal", "ring-finger-tip"],
+  pinky: ["pinky-finger-phalanx-proximal", "pinky-finger-phalanx-intermediate", "pinky-finger-phalanx-distal", "pinky-finger-tip"],
+};
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+
+/**
+ * Reshapes the model's skeleton to a scanned hand: knuckles spread to the
+ * scanned palm width and each finger stretched to the scanned length, both
+ * compared with what the scan measures on this model. Whole-finger lengths
+ * are used because single segments are too noisy to trust. The model's joints
+ * are all direct children of the armature, so each bone can be moved on its
+ * own; a bone is scaled along the finger to stretch the skin bound to it.
+ */
+function fitToProfile(scene: THREE.Object3D, profile: HandProfile) {
+  scene.updateMatrixWorld(true);
+  const bone = (name: string) => {
+    const b = scene.getObjectByName(name);
+    if (!b) throw new Error(`Hand model is missing ${name}`);
+    return b;
+  };
+  const pos = (name: string) => bone(name).getWorldPosition(new THREE.Vector3());
+  const targets = new Map<string, THREE.Vector3>();
+  const stretch = new Map<string, { axis: THREE.Vector3; factor: number }>();
+
+  const middleKnuckle = pos("middle-finger-phalanx-proximal");
+  const across = pos("index-finger-phalanx-proximal").sub(pos("pinky-finger-phalanx-proximal")).normalize();
+  const spread = clamp(profile.palmWidth / REFERENCE_PROFILE.palmWidth, 0.85, 1.15);
+  const total = (segs: number[]) => segs.reduce((a, b) => a + b, 0);
+
+  for (const finger of FINGERS) {
+    const names = FINGER_BONES[finger];
+    const joints = names.map(pos);
+    const factor = clamp(total(profile.segments[finger]) / total(REFERENCE_PROFILE.segments[finger]), 0.8, 1.25);
+    // Spread the knuckles sideways around the middle finger.
+    const offset = across.clone().multiplyScalar(joints[0].clone().sub(middleKnuckle).dot(across) * (spread - 1));
+    if (finger !== "thumb") {
+      const meta = names[0].replace("phalanx-proximal", "metacarpal");
+      targets.set(meta, pos(meta).addScaledVector(offset, 0.5));
+    }
+    const fitted = [joints[0].clone().add(offset)];
+    for (let k = 0; k < 3; k++) {
+      const seg = joints[k + 1].clone().sub(joints[k]);
+      fitted.push(fitted[k].clone().addScaledVector(seg, factor));
+      stretch.set(names[k], { axis: seg.normalize(), factor });
+    }
+    names.forEach((n, k) => targets.set(n, fitted[k]));
+  }
+
+  for (const [name, target] of targets) {
+    const b = bone(name);
+    b.position.copy(b.parent!.worldToLocal(target.clone()));
+  }
+  // Stretch along whichever local axis of the bone runs along its segment.
+  const q = new THREE.Quaternion();
+  for (const [name, { axis, factor }] of stretch) {
+    const b = bone(name);
+    b.getWorldQuaternion(q);
+    const local = axis.clone().applyQuaternion(q.invert());
+    const comps = [Math.abs(local.x), Math.abs(local.y), Math.abs(local.z)];
+    const i = comps.indexOf(Math.max(...comps));
+    b.scale.setComponent(i, b.scale.getComponent(i) * factor);
+  }
+  scene.updateMatrixWorld(true);
+}
 
 type FingerFrame = { base: THREE.Vector3; tip: THREE.Vector3; up: THREE.Vector3 };
 
@@ -232,11 +304,24 @@ function Nail(props: { hand: PreparedHand; finger: Finger; design?: HTMLImageEle
   );
 }
 
-function HandModel(props: { designs: Partial<Record<Finger, HTMLImageElement>>; fit: FitSettings; skinTone: string }) {
+function HandModel(props: {
+  designs: Partial<Record<Finger, HTMLImageElement>>;
+  fit: FitSettings;
+  skinTone: string;
+  profile?: HandProfile | null;
+}) {
+  const { profile } = props;
   const gltf = useLoader(GLTFLoader, HAND_URL);
-  const hand = useMemo(() => prepareHand(gltf.scene), [gltf]);
+  const hand = useMemo(() => {
+    if (!profile) return prepareHand(gltf.scene);
+    // The loaded model is shared, so reshape a copy of it.
+    const copy = cloneSkinned(gltf.scene) as THREE.Group;
+    fitToProfile(copy, profile);
+    return prepareHand(copy);
+  }, [gltf, profile]);
+  // The model is a right hand; a scanned left hand is its mirror image.
   return (
-    <group>
+    <group scale={[profile?.hand === "left" ? -1 : 1, 1, 1]}>
       <mesh geometry={hand.geometry}>
         <meshStandardMaterial color={props.skinTone} roughness={0.62} metalness={0} />
       </mesh>
@@ -251,6 +336,7 @@ export default function Hand3D(props: {
   designs: Partial<Record<Finger, HTMLImageElement>>;
   fit: FitSettings;
   skinTone: string;
+  profile?: HandProfile | null;
   onCanvas?: (canvas: HTMLCanvasElement) => void;
 }) {
   return (
@@ -265,7 +351,7 @@ export default function Hand3D(props: {
       <directionalLight position={[0.4, 0.6, 1]} intensity={1.8} />
       <directionalLight position={[-0.6, -0.3, 0.6]} intensity={0.6} />
       <directionalLight position={[0, 0.2, -1]} intensity={0.5} />
-      <HandModel designs={props.designs} fit={props.fit} skinTone={props.skinTone} />
+      <HandModel designs={props.designs} fit={props.fit} skinTone={props.skinTone} profile={props.profile} />
       <ContactShadows position={[0, -0.12, 0]} opacity={0.25} scale={0.5} blur={2.5} far={0.3} />
       <OrbitControls makeDefault enablePan={false} enableDamping minDistance={0.18} maxDistance={0.7} />
     </Canvas>

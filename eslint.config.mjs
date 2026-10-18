@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Hand tracking runtime copied from node_modules by scripts/setup-assets.mjs.
+    "public/mediapipe/**",
   ]),
 ]);
 

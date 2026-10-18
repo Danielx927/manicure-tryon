@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FINGERS, FINGER_LABELS, type Finger } from "@/lib/fingers";
+import { loadProfile, saveProfile, type HandProfile } from "@/lib/handProfile";
 import { formatPrice } from "@/lib/price";
 import { DEFAULT_FIT, type FitSettings, type NailShape } from "@/lib/renderNails";
 import { SKIN_TONES } from "./skinTones";
@@ -13,6 +14,10 @@ const Hand3D = dynamic(() => import("./Hand3D"), {
   ssr: false,
   loading: () => <ViewerMessage text="Loading the 3D hand…" />,
 });
+
+// The scanner pulls in the hand tracking runtime, so load it only when used.
+const ScanHand = dynamic(() => import("./ScanHand"), { ssr: false });
+const LiveTryOn = dynamic(() => import("./LiveTryOn"), { ssr: false });
 
 function ViewerMessage({ text }: { text: string }) {
   return (
@@ -40,6 +45,34 @@ export default function TryOn() {
   const [skinTone, setSkinTone] = useState(SKIN_TONES[1]);
   const [designImages, setDesignImages] = useState<Record<string, HTMLImageElement>>({});
   const viewerCanvas = useRef<HTMLCanvasElement | null>(null);
+  const [profile, setProfile] = useState<HandProfile | null>(null);
+  const [useScanned, setUseScanned] = useState(true);
+  const [scanning, setScanning] = useState(false);
+  const [live, setLive] = useState(false);
+
+  // A saved scan lives only in this browser, so read it after hydration.
+  useEffect(() => {
+    const saved = loadProfile();
+    if (saved) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setProfile(saved);
+      setSkinTone(saved.skinTone);
+    }
+  }, []);
+
+  const finishScan = (p: HandProfile) => {
+    saveProfile(p);
+    setProfile(p);
+    setUseScanned(true);
+    setSkinTone(p.skinTone);
+    setScanning(false);
+  };
+
+  const forgetScan = () => {
+    saveProfile(null);
+    setProfile(null);
+    setSkinTone(SKIN_TONES[1]);
+  };
 
   // Load every design image that is assigned to a finger.
   useEffect(() => {
@@ -110,7 +143,13 @@ export default function TryOn() {
     <div className="tryon">
       <section className="stage">
         <div className="viewer">
-          <Hand3D designs={nailImages} fit={fit} skinTone={skinTone} onCanvas={(c) => (viewerCanvas.current = c)} />
+          <Hand3D
+            designs={nailImages}
+            fit={fit}
+            skinTone={skinTone}
+            profile={useScanned ? profile : null}
+            onCanvas={(c) => (viewerCanvas.current = c)}
+          />
           <p className="viewer-hint">Drag to rotate · scroll or pinch to zoom</p>
         </div>
 
@@ -144,9 +183,52 @@ export default function TryOn() {
           </div>
         )}
 
+        <div className="hand-source">
+          {profile ? (
+            <>
+              <div className="shape-picker" role="radiogroup" aria-label="Hand model">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={useScanned}
+                  className={`chip${useScanned ? " on" : ""}`}
+                  onClick={() => setUseScanned(true)}
+                >
+                  My hand
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!useScanned}
+                  className={`chip${!useScanned ? " on" : ""}`}
+                  onClick={() => setUseScanned(false)}
+                >
+                  Standard hand
+                </button>
+              </div>
+              <button type="button" className="btn small" onClick={() => setScanning(true)}>
+                Rescan
+              </button>
+              <button type="button" className="btn small" onClick={forgetScan}>
+                Forget my scan
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="btn" onClick={() => setScanning(true)}>
+                Scan my hand
+              </button>
+              <span className="muted">Use your camera to shape the 3D hand like yours.</span>
+            </>
+          )}
+        </div>
+
         <div className="stage-actions">
           <button type="button" className="btn primary" onClick={download} disabled={!hasDesign}>
             Save picture
+          </button>
+          <button type="button" className="btn" onClick={() => setLive(true)}>
+            Try on with camera
           </button>
         </div>
       </section>
@@ -216,6 +298,18 @@ export default function TryOn() {
 
         <h2>Skin tone</h2>
         <div className="swatches" role="radiogroup" aria-label="Skin tone">
+          {profile && !SKIN_TONES.includes(profile.skinTone) && (
+            <button
+              type="button"
+              role="radio"
+              aria-checked={skinTone === profile.skinTone}
+              aria-label="Your skin tone from the scan"
+              title="From your scan"
+              className={`swatch${skinTone === profile.skinTone ? " on" : ""}`}
+              style={{ background: profile.skinTone }}
+              onClick={() => setSkinTone(profile.skinTone)}
+            />
+          )}
           {SKIN_TONES.map((tone, i) => (
             <button
               key={tone}
@@ -230,6 +324,11 @@ export default function TryOn() {
           ))}
         </div>
       </aside>
+
+      {scanning && <ScanHand onDone={finishScan} onClose={() => setScanning(false)} />}
+      {live && (
+        <LiveTryOn designs={nailImages} fit={fit} gallery={designs} onApply={applyDesign} onClose={() => setLive(false)} />
+      )}
     </div>
   );
 }
