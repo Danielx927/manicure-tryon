@@ -58,14 +58,23 @@ function drawCover(
 }
 
 /**
- * Paints a flat nail texture for the 3D hand: the design (or a bare nail tint)
- * clipped to the nail shape, tip at the top, transparent outside the nail.
- * Lighting on the 3D model provides the shading, so none is baked in here.
+ * Places the nail outline in a w×l texture: origin at the cuticle centre,
+ * leaving room below it for the cuticle arc.
+ */
+function placeOutline(ctx: CanvasRenderingContext2D, w: number, l: number, shape: NailShape) {
+  const nl = l - Math.round(w * 0.14);
+  ctx.translate(w / 2, nl);
+  traceNail(ctx, w, nl, shape);
+}
+
+/**
+ * Paints the nail texture for the 3D hand: the design (or a bare nail tint)
+ * filling the whole image, tip at the top. The 3D nail is cut to the nail
+ * shape itself (see nailOutline), and lighting provides the shading.
  */
 export function paintNailTexture(
   canvas: HTMLCanvasElement,
   design: (CanvasImageSource & { width: number; height: number }) | undefined,
-  shape: NailShape,
   aspect: number,
 ) {
   const w = 256;
@@ -73,33 +82,51 @@ export function paintNailTexture(
   canvas.width = w;
   canvas.height = l;
   const ctx = canvas.getContext("2d")!;
-  ctx.clearRect(0, 0, w, l);
-  // The cuticle arc bulges below the origin, so leave room for it.
-  const bulge = Math.round(w * 0.14);
-  const nl = l - bulge;
-  ctx.save();
-  ctx.translate(w / 2, nl);
-  traceNail(ctx, w, nl, shape);
-  ctx.save();
-  ctx.clip();
   if (design) {
-    drawCover(ctx, design, -w / 2, -nl, w, l);
+    drawCover(ctx, design, 0, 0, w, l);
   } else {
     // Bare nail: pinkish bed with a paler free edge.
-    const bed = ctx.createLinearGradient(0, bulge, 0, -nl);
-    bed.addColorStop(0, "#f2c7c0");
-    bed.addColorStop(0.78, "#f6d3cd");
-    bed.addColorStop(0.8, "#fbf1ea");
-    bed.addColorStop(1, "#fdf8f3");
+    const bed = ctx.createLinearGradient(0, l, 0, 0);
+    bed.addColorStop(0, "#e2a59c");
+    bed.addColorStop(0.68, "#e9b3aa");
+    bed.addColorStop(0.73, "#f1e2d8");
+    bed.addColorStop(1, "#f6ece4");
     ctx.fillStyle = bed;
-    ctx.fillRect(-w / 2, -nl, w, l);
+    ctx.fillRect(0, 0, w, l);
   }
-  ctx.restore();
-  traceNail(ctx, w, nl, shape);
-  ctx.lineWidth = 4;
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.18)";
-  ctx.stroke();
-  ctx.restore();
+}
+
+/**
+ * The nail shape as texture coordinates: for `rows` rows from the cuticle
+ * (v = 0) to the tip (v = 1), the left and right edge (u from 0 to 1), or
+ * null where the row is outside the nail.
+ */
+export function nailOutline(shape: NailShape, aspect: number, rows = 160): ([number, number] | null)[] {
+  const w = 128;
+  const l = Math.max(rows, Math.round(w * aspect));
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = l;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  placeOutline(ctx, w, l, shape);
+  ctx.fillStyle = "#000";
+  ctx.fill();
+  const data = ctx.getImageData(0, 0, w, l).data;
+  const out: ([number, number] | null)[] = [];
+  for (let r = 0; r < rows; r++) {
+    // Canvas rows run from the tip down; v runs from the cuticle up.
+    const y = Math.min(l - 1, Math.floor((1 - (r + 0.5) / rows) * l));
+    let left = -1;
+    let right = -1;
+    for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4 + 3] > 127) {
+        if (left < 0) left = x;
+        right = x;
+      }
+    }
+    out.push(left < 0 ? null : [left / w, (right + 1) / w]);
+  }
+  return out;
 }
 
 /**
