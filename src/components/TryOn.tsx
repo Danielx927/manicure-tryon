@@ -155,7 +155,7 @@ export default function TryOn() {
 
         {!hasDesign && (
           <div className="notice info" role="status">
-            Pick a design on the right to see it on the nails.
+            Pick a design from the gallery to see it on the nails.
           </div>
         )}
 

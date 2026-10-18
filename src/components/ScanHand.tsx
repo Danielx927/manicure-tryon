@@ -213,7 +213,7 @@ export default function ScanHand(props: { onDone: (profile: HandProfile) => void
       </button>
 
       <div className="scan-frame">
-        <video ref={videoRef} playsInline muted />
+        <video ref={videoRef} playsInline muted autoPlay />
         <svg viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" aria-hidden>
           <defs>
             <mask id="scan-hole">

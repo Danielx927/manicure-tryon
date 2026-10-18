@@ -3,59 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import type { Finger } from "@/lib/fingers";
 import { backFacing } from "@/lib/handProfile";
+import { MASK_WIDTH, paintHandMask } from "@/lib/handMask";
 import { getHandTracker } from "@/lib/handTracker";
 import { computeHandNails, type Point } from "@/lib/nails";
 import { drawNail, type FitSettings } from "@/lib/renderNails";
 import type { PublicDesign } from "./useDesigns";
 
 type Phase = "starting" | "error" | "live";
-
-// Landmarks that outline the palm, and each finger's chain from its knuckle.
-const PALM = [0, 1, 2, 5, 9, 13, 17];
-const CHAINS = [
-  [1, 2, 3, 4],
-  [5, 6, 7, 8],
-  [9, 10, 11, 12],
-  [13, 14, 15, 16],
-  [17, 18, 19, 20],
-];
-
-/**
- * Paints a soft-edged mask covering the hand: the palm polygon plus a thick
- * stroke along every finger. Everything outside it is hidden, so only the
- * hands show.
- */
-function paintHandMask(ctx: CanvasRenderingContext2D, pts: Point[]) {
-  const d = (a: number, b: number) => Math.hypot(pts[a].x - pts[b].x, pts[a].y - pts[b].y);
-  const knuckles = (d(5, 9) + d(9, 13) + d(13, 17)) / 3;
-  const thick = Math.max(knuckles, d(7, 8) * 0.9) * 1.05;
-  ctx.fillStyle = ctx.strokeStyle = "#fff";
-  ctx.lineCap = ctx.lineJoin = "round";
-  ctx.lineWidth = thick;
-  ctx.beginPath();
-  PALM.forEach((i, k) => (k ? ctx.lineTo(pts[i].x, pts[i].y) : ctx.moveTo(pts[i].x, pts[i].y)));
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-  for (const chain of CHAINS) {
-    ctx.beginPath();
-    ctx.moveTo(pts[chain[0]].x, pts[chain[0]].y);
-    for (const i of chain.slice(1)) ctx.lineTo(pts[i].x, pts[i].y);
-    // Reach a little past the tip landmark, which sits on the finger pad.
-    const a = pts[chain[2]];
-    const b = pts[chain[3]];
-    ctx.lineTo(b.x + (b.x - a.x) * 0.25, b.y + (b.y - a.y) * 0.25);
-    ctx.stroke();
-  }
-  // A bit of wrist, fading out.
-  const wrist = pts[0];
-  const up = { x: pts[9].x - wrist.x, y: pts[9].y - wrist.y };
-  ctx.beginPath();
-  ctx.moveTo(wrist.x, wrist.y);
-  ctx.lineTo(wrist.x - up.x * 0.35, wrist.y - up.y * 0.35);
-  ctx.lineWidth = thick * 2.2;
-  ctx.stroke();
-}
 
 /**
  * Live try-on: the front camera with the chosen designs drawn onto the
@@ -86,6 +40,7 @@ export default function LiveTryOn(props: {
     let lastTime = -1;
     const smoothed: Point[][] = [];
     const maskCanvas = document.createElement("canvas");
+    const frameCanvas = document.createElement("canvas");
 
     const start = async () => {
       try {
@@ -105,7 +60,8 @@ export default function LiveTryOn(props: {
         setPhase("live");
         const canvas = canvasRef.current!;
         const ctx = canvas.getContext("2d")!;
-        const mctx = maskCanvas.getContext("2d")!;
+        const mctx = maskCanvas.getContext("2d", { willReadFrequently: true })!;
+        const fctx = frameCanvas.getContext("2d", { willReadFrequently: true })!;
 
         const tick = () => {
           raf = requestAnimationFrame(tick);
@@ -114,8 +70,10 @@ export default function LiveTryOn(props: {
           const w = video.videoWidth;
           const h = video.videoHeight;
           if (canvas.width !== w || canvas.height !== h) {
-            canvas.width = maskCanvas.width = w;
-            canvas.height = maskCanvas.height = h;
+            canvas.width = w;
+            canvas.height = h;
+            maskCanvas.width = frameCanvas.width = MASK_WIDTH;
+            maskCanvas.height = frameCanvas.height = Math.round((MASK_WIDTH * h) / w);
           }
           const result = tracker.detectForVideo(video, performance.now());
           const { designs, fit } = latest.current;
@@ -147,17 +105,19 @@ export default function LiveTryOn(props: {
           });
           smoothed.length = hands.length;
 
-          mctx.clearRect(0, 0, w, h);
-          mctx.filter = `blur(${Math.round(w / 200)}px)`;
-          for (const hand of hands) paintHandMask(mctx, hand.pts);
-          mctx.filter = "none";
+          // A small mirrored copy of the frame for the skin-colour mask.
+          fctx.setTransform(-1, 0, 0, 1, frameCanvas.width, 0);
+          fctx.drawImage(video, 0, 0, frameCanvas.width, frameCanvas.height);
+          paintHandMask(mctx, fctx, hands.map((hand) => hand.pts), w);
 
           ctx.translate(w, 0);
           ctx.scale(-1, 1);
           ctx.drawImage(video, 0, 0, w, h);
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           ctx.globalCompositeOperation = "destination-in";
-          ctx.drawImage(maskCanvas, 0, 0);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          ctx.drawImage(maskCanvas, 0, 0, w, h);
           ctx.globalCompositeOperation = "source-over";
 
           let anyBack = false;
@@ -220,7 +180,7 @@ export default function LiveTryOn(props: {
         ×
       </button>
       <div className="live-frame">
-        <video ref={videoRef} playsInline muted />
+        <video ref={videoRef} playsInline muted autoPlay />
         <canvas ref={canvasRef} />
         {phase === "starting" && (
           <div className="scan-center">
