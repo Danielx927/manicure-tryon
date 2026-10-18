@@ -702,6 +702,32 @@ a.btn {
   color: #111;
 }
 
+.scan-tone {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  text-align: left;
+}
+
+.scan-tone p {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.scan-tone-swatch {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.6);
+}
+
+.scan-tone-buttons {
+  display: flex;
+  gap: 8px;
+}
+
 .scan-privacy {
   margin: 0;
   font-size: 0.8rem;

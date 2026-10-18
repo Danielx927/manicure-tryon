@@ -1,4 +1,5 @@
 import { FINGERS, type Finger } from "./fingers";
+import { estimateSkinTone, type SkinSample } from "./skinTone";
 
 /**
  * A user's hand as measured by the guided scan. Lengths are relative to the
@@ -107,7 +108,7 @@ export function closedFingers(lm: P3[]): Finger[] {
 export function buildProfile(
   worldFrames: P3[][],
   handednessVotes: string[],
-  skinSamples: [number, number, number][],
+  skinSamples: SkinSample[],
 ): HandProfile {
   const ratio = (f: (lm: P3[]) => number) => median(worldFrames.map((lm) => f(lm) / dist(lm[0], lm[9])));
   const segments = {} as Record<Finger, [number, number, number]>;
@@ -121,15 +122,9 @@ export function buildProfile(
     hand: rights >= handednessVotes.length / 2 ? "right" : "left",
     segments,
     palmWidth: ratio((lm) => dist(lm[5], lm[17])),
-    skinTone: skinToHex(skinSamples),
+    skinTone: estimateSkinTone(skinSamples),
     capturedAt: new Date().toISOString(),
   };
-}
-
-function skinToHex(samples: [number, number, number][]): string {
-  if (samples.length === 0) return "#e3b38f";
-  const channel = (i: number) => Math.round(median(samples.map((s) => s[i])));
-  return `#${[channel(0), channel(1), channel(2)].map((v) => v.toString(16).padStart(2, "0")).join("")}`;
 }
 
 const STORAGE_KEY = "nail-tryon.hand-profile";

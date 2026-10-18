@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { angleBetween, backFacing, buildProfile, closedFingers, palmNormal, type HandProfile } from "@/lib/handProfile";
 import { getHandTracker } from "@/lib/handTracker";
+import { frameWhite, shiftTone, type RGB, type SkinSample } from "@/lib/skinTone";
 
 type Phase = "starting" | "denied" | "place" | "turn" | "done";
 type P3 = { x: number; y: number; z: number };
@@ -34,26 +35,33 @@ function HandShapes(props: { grow?: number; fill: string }) {
   );
 }
 
-/** Median colour of a few pixels around each point, as [r, g, b]. */
-function sampleSkin(ctx: CanvasRenderingContext2D, points: { x: number; y: number }[]): [number, number, number] | null {
+/**
+ * Pixels from the back of the hand (a grid between the wrist and the
+ * knuckles) and the frame's brightest colour, from a small copy of the frame.
+ */
+function sampleSkin(ctx: CanvasRenderingContext2D, lm: { x: number; y: number }[]): SkinSample {
   const { width, height } = ctx.canvas;
-  const reds: number[] = [];
-  const greens: number[] = [];
-  const blues: number[] = [];
-  for (const p of points) {
-    const x = Math.round(p.x * width) - 2;
-    const y = Math.round(p.y * height) - 2;
-    if (x < 0 || y < 0 || x + 5 > width || y + 5 > height) continue;
-    const data = ctx.getImageData(x, y, 5, 5).data;
-    for (let i = 0; i < data.length; i += 4) {
-      reds.push(data[i]);
-      greens.push(data[i + 1]);
-      blues.push(data[i + 2]);
+  const data = ctx.getImageData(0, 0, width, height).data;
+  const skin: RGB[] = [];
+  for (const knuckle of [5, 9, 13, 17]) {
+    for (const t of [0.35, 0.55, 0.75]) {
+      const cx = Math.round((lm[0].x + (lm[knuckle].x - lm[0].x) * t) * width);
+      const cy = Math.round((lm[0].y + (lm[knuckle].y - lm[0].y) * t) * height);
+      for (let y = cy - 2; y <= cy + 2; y++) {
+        for (let x = cx - 2; x <= cx + 2; x++) {
+          if (x < 0 || y < 0 || x >= width || y >= height) continue;
+          const i = (y * width + x) * 4;
+          skin.push([data[i], data[i + 1], data[i + 2]]);
+        }
+      }
     }
   }
-  if (reds.length === 0) return null;
-  const mid = (a: number[]) => a.sort((m, n) => m - n)[a.length >> 1];
-  return [mid(reds), mid(greens), mid(blues)];
+  // The hand itself (and its shine) shouldn't count as the frame's white.
+  const xs = lm.map((p) => p.x * width);
+  const ys = lm.map((p) => p.y * height);
+  const pad = 0.15 * Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  const hand = { x0: Math.min(...xs) - pad, y0: Math.min(...ys) - pad, x1: Math.max(...xs) + pad, y1: Math.max(...ys) + pad };
+  return { skin, white: frameWhite(data, width, hand) };
 }
 
 /**
@@ -70,6 +78,8 @@ export default function ScanHand(props: { onDone: (profile: HandProfile) => void
   const [side, setSide] = useState<"right" | "left">("right");
   const [error, setError] = useState("");
   const [profile, setProfile] = useState<HandProfile | null>(null);
+  // Lighter/darker steps the user applied to the measured skin tone.
+  const [toneSteps, setToneSteps] = useState(0);
   const sideRef = useRef(side);
   useEffect(() => {
     sideRef.current = side;
@@ -87,7 +97,7 @@ export default function ScanHand(props: { onDone: (profile: HandProfile) => void
     let frame = 0;
     const worldFrames: P3[][] = [];
     const votes: string[] = [];
-    const skin: [number, number, number][] = [];
+    const skin: SkinSample[] = [];
     const sampler = document.createElement("canvas").getContext("2d", { willReadFrequently: true })!;
     let current: Phase = "starting";
     const go = (p: Phase) => {
@@ -182,13 +192,10 @@ export default function ScanHand(props: { onDone: (profile: HandProfile) => void
           if (label) votes.push(label);
           maxTurn = Math.max(maxTurn, angleBetween(palmNormal(world), startNormal!));
           if (frame++ % 5 === 0 && back) {
-            sampler.canvas.width = 160;
-            sampler.canvas.height = Math.round((160 * h) / w);
+            sampler.canvas.width = 240;
+            sampler.canvas.height = Math.round((240 * h) / w);
             sampler.drawImage(video, 0, 0, sampler.canvas.width, sampler.canvas.height);
-            // Back of the hand, between the wrist and the knuckles.
-            const mid = (a: number, b: number, t: number) => ({ x: lm[a].x + (lm[b].x - lm[a].x) * t, y: lm[a].y + (lm[b].y - lm[a].y) * t });
-            const sample = sampleSkin(sampler, [mid(0, 9, 0.45), mid(0, 5, 0.55), mid(0, 13, 0.55), mid(0, 17, 0.5)]);
-            if (sample) skin.push(sample);
+            skin.push(sampleSkin(sampler, lm));
           }
           const p = Math.min(worldFrames.length / MIN_FRAMES, maxTurn / TURN_DEGREES, 1);
           setProgress(p);
@@ -224,6 +231,7 @@ export default function ScanHand(props: { onDone: (profile: HandProfile) => void
     };
   }, []);
 
+  const tone = profile ? shiftTone(profile.skinTone, toneSteps) : "";
   const mirror = side === "left" ? "translate(100 0) scale(-1 1)" : undefined;
   const pct = Math.round(progress * 100);
 
@@ -272,7 +280,21 @@ export default function ScanHand(props: { onDone: (profile: HandProfile) => void
         ) : phase === "done" && profile ? (
           <>
             <p className="scan-hint">Got it! Your 3D hand now matches your finger lengths and palm.</p>
-            <button type="button" className="btn primary" onClick={() => props.onDone(profile)}>
+            <div className="scan-tone">
+              <span className="scan-tone-swatch" style={{ background: tone }} aria-hidden />
+              <div>
+                <p>Your skin tone. Cameras can get it a little off, so adjust it if needed.</p>
+                <div className="scan-tone-buttons">
+                  <button type="button" className="chip" onClick={() => setToneSteps((n) => n - 1)}>
+                    Darker
+                  </button>
+                  <button type="button" className="chip" onClick={() => setToneSteps((n) => n + 1)}>
+                    Lighter
+                  </button>
+                </div>
+              </div>
+            </div>
+            <button type="button" className="btn primary" onClick={() => props.onDone({ ...profile, skinTone: tone })}>
               See my hand
             </button>
           </>
