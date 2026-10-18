@@ -10,7 +10,7 @@ async function createTracker(): Promise<HandLandmarker> {
   const options = (delegate: "GPU" | "CPU") => ({
     baseOptions: { modelAssetPath: "/models/hand_landmarker.task", delegate },
     runningMode: "VIDEO" as const,
-    numHands: 2,
+    numHands: 1,
     minHandDetectionConfidence: 0.5,
     minHandPresenceConfidence: 0.5,
     minTrackingConfidence: 0.5,

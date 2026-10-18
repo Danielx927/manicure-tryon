@@ -39,6 +39,8 @@ export default function LiveTryOn(props: {
     let raf = 0;
     let cancelled = false;
     let lastTime = -1;
+    let frameNo = 0;
+    let lastSkin: SkinMap | null = null;
     const smoothed: Point[][] = [];
     const maskCanvas = document.createElement("canvas");
     const frameCanvas = document.createElement("canvas");
@@ -48,6 +50,8 @@ export default function LiveTryOn(props: {
     const cropCanvas = document.createElement("canvas");
     cropCanvas.width = cropCanvas.height = 256;
     const paintHandMask = createHandMasker();
+    // Add ?perf to the address to log where each frame's time goes.
+    const perf = new URLSearchParams(location.search).has("perf") ? { n: 0, track: 0, segment: 0, mask: 0, draw: 0 } : null;
 
     const start = async () => {
       try {
@@ -55,7 +59,8 @@ export default function LiveTryOn(props: {
         // Without the segmentation model the mask falls back to skin colour.
         const [s, tracker, segmenter] = await Promise.all([
           navigator.mediaDevices.getUserMedia({
-            video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+            // Enough detail for the picture without making every step slower.
+            video: { facingMode: "user", width: { ideal: 960 }, height: { ideal: 540 } },
             audio: false,
           }),
           getHandTracker(),
@@ -87,8 +92,10 @@ export default function LiveTryOn(props: {
             maskCanvas.width = frameCanvas.width = MASK_WIDTH;
             maskCanvas.height = frameCanvas.height = Math.round((MASK_WIDTH * h) / w);
           }
+          const t0 = performance.now();
           sctx.drawImage(video, 0, 0, w, h);
           const result = tracker.detectForVideo(still, performance.now());
+          const t1 = performance.now();
           const { designs, fit } = latest.current;
 
           ctx.save();
@@ -96,6 +103,7 @@ export default function LiveTryOn(props: {
           if (result.landmarks.length === 0) {
             ctx.restore();
             smoothed.length = 0;
+            lastSkin = null;
             setHint("No hands found. Hold your hand up in front of the camera, nails facing it.");
             return;
           }
@@ -118,9 +126,11 @@ export default function LiveTryOn(props: {
           });
           smoothed.length = hands.length;
 
-          // A small mirrored copy of the frame for the skin-colour mask.
-          fctx.setTransform(-1, 0, 0, 1, frameCanvas.width, 0);
-          fctx.drawImage(still, 0, 0, frameCanvas.width, frameCanvas.height);
+          if (!segmenter) {
+            // A small mirrored copy of the frame for the skin-colour mask.
+            fctx.setTransform(-1, 0, 0, 1, frameCanvas.width, 0);
+            fctx.drawImage(still, 0, 0, frameCanvas.width, frameCanvas.height);
+          }
           let skin: SkinMap | null = null;
           if (segmenter) {
             // A square around all tracked hands, with room for the fingertips.
@@ -133,15 +143,24 @@ export default function LiveTryOn(props: {
               y: (Math.max(...ys) + Math.min(...ys)) / 2 - side / 2,
               side,
             };
-            const k = cropCanvas.width / side;
-            cctx.setTransform(k, 0, 0, k, -area.x * k, -area.y * k);
-            cctx.clearRect(area.x, area.y, side, side);
-            cctx.translate(w, 0);
-            cctx.scale(-1, 1);
-            cctx.drawImage(still, 0, 0, w, h);
-            skin = segmentSkin(segmenter, cropCanvas, area, performance.now());
+            // Segmentation is the slowest step, so it runs on every third
+            // frame; in between, the last outline is moved along with the
+            // hand (it was measured relative to the same square).
+            if (lastSkin && frameNo++ % 3 !== 0) {
+              skin = { ...lastSkin, ...area };
+            } else {
+              const k = cropCanvas.width / side;
+              cctx.setTransform(k, 0, 0, k, -area.x * k, -area.y * k);
+              cctx.clearRect(area.x, area.y, side, side);
+              cctx.translate(w, 0);
+              cctx.scale(-1, 1);
+              cctx.drawImage(still, 0, 0, w, h);
+              skin = lastSkin = segmentSkin(segmenter, cropCanvas, area, performance.now());
+            }
           }
+          const t2 = performance.now();
           paintHandMask(mctx, fctx, hands.map((hand) => hand.pts), w, skin);
+          const t3 = performance.now();
 
           ctx.translate(w, 0);
           ctx.scale(-1, 1);
@@ -163,6 +182,19 @@ export default function LiveTryOn(props: {
             }
           }
           ctx.restore();
+          if (perf) {
+            const t4 = performance.now();
+            perf.n++;
+            perf.track += t1 - t0;
+            perf.segment += t2 - t1;
+            perf.mask += t3 - t2;
+            perf.draw += t4 - t3;
+            if (perf.n === 30) {
+              const ms = (v: number) => Math.round(v / perf.n);
+              console.info(`[live] per frame ms: track ${ms(perf.track)}, segment ${ms(perf.segment)}, mask ${ms(perf.mask)}, draw ${ms(perf.draw)}`);
+              Object.assign(perf, { n: 0, track: 0, segment: 0, mask: 0, draw: 0 });
+            }
+          }
           const anyDesign = Object.values(designs).some(Boolean);
           setHint(
             !anyBack

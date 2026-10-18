@@ -225,8 +225,12 @@ export default function ScanHand(props: { onDone: (profile: HandProfile) => void
           </defs>
           {/* Everything outside the outline is hidden, so only the hand shows. */}
           <rect x="-50" y="-50" width="200" height="200" fill="#0b0b0f" opacity="0.94" mask="url(#scan-hole)" />
-          <g transform={mirror} mask="url(#scan-hole)" className={`scan-outline${aligned ? " ok" : ""}`}>
-            <HandShapes fill="currentColor" grow={0.9} />
+          {/* The mask goes on an unmirrored group: on the mirrored one it would be
+              mirrored a second time and no longer match the left-hand outline. */}
+          <g mask="url(#scan-hole)" className={`scan-outline${aligned ? " ok" : ""}`}>
+            <g transform={mirror}>
+              <HandShapes fill="currentColor" grow={0.9} />
+            </g>
           </g>
         </svg>
         {phase === "starting" && (
