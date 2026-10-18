@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { angleBetween, backFacing, buildProfile, palmNormal, type HandProfile } from "@/lib/handProfile";
+import { angleBetween, backFacing, buildProfile, closedFingers, palmNormal, type HandProfile } from "@/lib/handProfile";
 import { getHandTracker } from "@/lib/handTracker";
 
 type Phase = "starting" | "denied" | "place" | "turn" | "done";
@@ -80,6 +80,7 @@ export default function ScanHand(props: { onDone: (profile: HandProfile) => void
     let raf = 0;
     let cancelled = false;
     let steady = 0;
+    const recentLabels: ("left" | "right")[] = [];
     let startNormal: P3 | null = null;
     let maxTurn = 0;
     let lastTime = -1;
@@ -121,7 +122,7 @@ export default function ScanHand(props: { onDone: (profile: HandProfile) => void
           const world = result.worldLandmarks[0];
           const label = result.handedness[0]?.[0]?.categoryName;
           if (!lm || !world) {
-            steady = 0;
+            steady = Math.max(0, steady - 3);
             setAligned(false);
             setHint(current === "turn" ? "Lost your hand. Bring it back into the outline." : "No hand found yet. Hold your hand up inside the outline.");
             return;
@@ -134,17 +135,32 @@ export default function ScanHand(props: { onDone: (profile: HandProfile) => void
           const inSquare = lm.map((p) => ({ x: ((1 - p.x) * w - (w - size) / 2) / size, y: (p.y * h - (h - size) / 2) / size }));
           const inside = inSquare.every((p) => p.x > 0.08 && p.x < 0.92 && p.y > 0.02 && p.y < 1.04);
           const palm = Math.hypot(inSquare[9].x - inSquare[0].x, inSquare[9].y - inSquare[0].y);
-          const back = backFacing(lm, label);
+          // The tracker tells left from right reliably on the raw (unmirrored)
+          // camera frame; it has to agree with the hand the user picked.
+          const chosen = sideRef.current;
+          // Judge by the last few frames: the label can flicker for a frame
+          // when the hand is edge-on.
+          recentLabels.push(label === "Left" ? "left" : label === "Right" ? "right" : chosen);
+          if (recentLabels.length > 9) recentLabels.shift();
+          const seen = recentLabels.filter((l) => l === "left").length * 2 > recentLabels.length ? "left" : "right";
+          const wrongHand = seen !== chosen;
+          const back = backFacing(lm, chosen === "right" ? "Right" : "Left");
+          const open = closedFingers(world).length === 0;
+          const wrongHandHint = `That looks like your ${seen} hand. Show your ${chosen} hand, or pick "${seen === "left" ? "Left" : "Right"} hand" below.`;
+          const openHint = "Open your hand and spread your fingers.";
 
           if (current === "place") {
             let message = "";
-            if (!back) message = "Turn your hand so the back of it (your nails) faces the camera.";
+            if (wrongHand) message = wrongHandHint;
+            else if (!back) message = "Turn your hand so the back of it (your nails) faces the camera.";
+            else if (!open) message = openHint;
             else if (!inside) message = "Move your hand so it fits inside the outline.";
             else if (palm < 0.2) message = "Bring your hand a little closer.";
             else if (palm > 0.55) message = "Move your hand a little further away.";
             const ok = message === "";
             setAligned(ok);
-            steady = ok ? steady + 1 : 0;
+            // A single bad frame shouldn't restart the countdown.
+            steady = ok ? steady + 1 : Math.max(0, steady - 3);
             setHint(ok ? "Hold still…" : message);
             if (steady >= STEADY_FRAMES) {
               startNormal = palmNormal(world);
@@ -154,7 +170,13 @@ export default function ScanHand(props: { onDone: (profile: HandProfile) => void
             return;
           }
 
-          // Turning: collect measurements from every frame the hand is seen.
+          // Turning: collect measurements from every frame showing the right,
+          // open hand; anything else would skew the lengths.
+          if (wrongHand || !open) {
+            setAligned(false);
+            setHint(wrongHand ? wrongHandHint : openHint);
+            return;
+          }
           setAligned(true);
           worldFrames.push(world);
           if (label) votes.push(label);
@@ -175,8 +197,7 @@ export default function ScanHand(props: { onDone: (profile: HandProfile) => void
             return;
           }
           const result2 = buildProfile(worldFrames, votes, skin);
-          // The hand the user picked is more reliable than the tracker's guess.
-          setProfile({ ...result2, hand: sideRef.current });
+          setProfile({ ...result2, hand: chosen });
           go("done");
           setHint("Scan complete.");
         };

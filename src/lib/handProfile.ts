@@ -80,6 +80,29 @@ export function backFacing(lm: { x: number; y: number }[], handedness: string | 
   return handedness === "Right" ? cross > 0 : cross < 0;
 }
 
+const sub = (a: P3, b: P3): P3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+const cosine = (a: P3, b: P3) =>
+  (a.x * b.x + a.y * b.y + a.z * b.z) / ((Math.hypot(a.x, a.y, a.z) * Math.hypot(b.x, b.y, b.z)) || 1);
+
+/**
+ * Fingers that aren't straight and extended, from 3D landmarks. A finger
+ * counts as open when its tip is well past its middle joint (measured from
+ * the wrist) and its last two segments line up; the thumb when it is straight
+ * and its tip is away from the index knuckle. A fist or bent fingers would
+ * give wrong lengths, so the scan only measures an open hand. (Tuned on
+ * MediaPipe's sample photos: open fingers reach 1.3x or more, curled ones
+ * 0.75x or less.)
+ */
+export function closedFingers(lm: P3[]): Finger[] {
+  const palm = dist(lm[0], lm[9]);
+  return FINGERS.filter((finger) => {
+    const [, b, c, d] = LANDMARK_CHAINS[finger];
+    const straight = cosine(sub(lm[c], lm[b]), sub(lm[d], lm[c])) > 0.5;
+    if (finger === "thumb") return !straight || dist(lm[d], lm[5]) < palm * 0.45;
+    return !(straight && dist(lm[0], lm[d]) > dist(lm[0], lm[b]) * 1.15);
+  });
+}
+
 /** Turns the 3D landmark frames collected during a scan into a profile. */
 export function buildProfile(
   worldFrames: P3[][],
