@@ -13,7 +13,9 @@ Try preset manicure designs on a rotatable 3D hand.
   scan measures on the built-in model (`REFERENCE_PROFILE` in `src/lib/handProfile.ts`), which cancels out the
   tracker's own biases. The scan is kept only in the browser's local storage; no video leaves the device.
 - **Try on with camera** draws the chosen designs onto the user's real nails in the live camera view, with
-  everything except the hands blacked out, and can save a photo.
+  everything except the hands blacked out, and can save a photo. The hand outline comes from MediaPipe's
+  multiclass selfie segmentation model (body-skin layer), run on a crop around the tracked hand and limited to
+  the area around its landmarks; if that model can't load it falls back to matching the skin colour.
 - **Designs** come from a preset gallery. Only admins can add, remove or edit them, at `/admin`.
 - Each design can carry an optional **price** (amount and currency) and an optional **purchase link** (http/https only), set when uploading or edited later in the
   admin gallery. The try-on page shows prices and "Buy" links on the gallery cards, and a "Shop this look" list of the

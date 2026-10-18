@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import type { Finger } from "@/lib/fingers";
 import { backFacing } from "@/lib/handProfile";
-import { MASK_WIDTH, paintHandMask } from "@/lib/handMask";
+import { createHandMasker, MASK_WIDTH } from "@/lib/handMask";
 import { getHandTracker } from "@/lib/handTracker";
+import { getSkinSegmenter, segmentSkin, type SkinMap } from "@/lib/skinSegmenter";
 import { computeHandNails, type Point } from "@/lib/nails";
 import { drawNail, type FitSettings } from "@/lib/renderNails";
 import type { PublicDesign } from "./useDesigns";
@@ -41,19 +42,28 @@ export default function LiveTryOn(props: {
     const smoothed: Point[][] = [];
     const maskCanvas = document.createElement("canvas");
     const frameCanvas = document.createElement("canvas");
+    // One still of the current video frame, so tracking, the mask and the
+    // picture all use the same frame even if the video moves on meanwhile.
+    const still = document.createElement("canvas");
+    const cropCanvas = document.createElement("canvas");
+    cropCanvas.width = cropCanvas.height = 256;
+    const paintHandMask = createHandMasker();
 
     const start = async () => {
       try {
         if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser can't use the camera here.");
-        const [s, tracker] = await Promise.all([
+        // Without the segmentation model the mask falls back to skin colour.
+        const [s, tracker, segmenter] = await Promise.all([
           navigator.mediaDevices.getUserMedia({
             video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
             audio: false,
           }),
           getHandTracker(),
+          getSkinSegmenter().catch(() => null),
         ]);
         stream = s;
         if (cancelled) return;
+        if (!segmenter) console.warn("Skin segmentation unavailable; using the colour-based hand mask.");
         const video = videoRef.current!;
         video.srcObject = s;
         await video.play();
@@ -62,6 +72,8 @@ export default function LiveTryOn(props: {
         const ctx = canvas.getContext("2d")!;
         const mctx = maskCanvas.getContext("2d", { willReadFrequently: true })!;
         const fctx = frameCanvas.getContext("2d", { willReadFrequently: true })!;
+        const cctx = cropCanvas.getContext("2d")!;
+        const sctx = still.getContext("2d")!;
 
         const tick = () => {
           raf = requestAnimationFrame(tick);
@@ -70,12 +82,13 @@ export default function LiveTryOn(props: {
           const w = video.videoWidth;
           const h = video.videoHeight;
           if (canvas.width !== w || canvas.height !== h) {
-            canvas.width = w;
-            canvas.height = h;
+            canvas.width = still.width = w;
+            canvas.height = still.height = h;
             maskCanvas.width = frameCanvas.width = MASK_WIDTH;
             maskCanvas.height = frameCanvas.height = Math.round((MASK_WIDTH * h) / w);
           }
-          const result = tracker.detectForVideo(video, performance.now());
+          sctx.drawImage(video, 0, 0, w, h);
+          const result = tracker.detectForVideo(still, performance.now());
           const { designs, fit } = latest.current;
 
           ctx.save();
@@ -107,12 +120,32 @@ export default function LiveTryOn(props: {
 
           // A small mirrored copy of the frame for the skin-colour mask.
           fctx.setTransform(-1, 0, 0, 1, frameCanvas.width, 0);
-          fctx.drawImage(video, 0, 0, frameCanvas.width, frameCanvas.height);
-          paintHandMask(mctx, fctx, hands.map((hand) => hand.pts), w);
+          fctx.drawImage(still, 0, 0, frameCanvas.width, frameCanvas.height);
+          let skin: SkinMap | null = null;
+          if (segmenter) {
+            // A square around all tracked hands, with room for the fingertips.
+            const all = hands.flatMap((hand) => hand.pts);
+            const xs = all.map((p) => p.x);
+            const ys = all.map((p) => p.y);
+            const side = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * 1.35;
+            const area = {
+              x: (Math.max(...xs) + Math.min(...xs)) / 2 - side / 2,
+              y: (Math.max(...ys) + Math.min(...ys)) / 2 - side / 2,
+              side,
+            };
+            const k = cropCanvas.width / side;
+            cctx.setTransform(k, 0, 0, k, -area.x * k, -area.y * k);
+            cctx.clearRect(area.x, area.y, side, side);
+            cctx.translate(w, 0);
+            cctx.scale(-1, 1);
+            cctx.drawImage(still, 0, 0, w, h);
+            skin = segmentSkin(segmenter, cropCanvas, area, performance.now());
+          }
+          paintHandMask(mctx, fctx, hands.map((hand) => hand.pts), w, skin);
 
           ctx.translate(w, 0);
           ctx.scale(-1, 1);
-          ctx.drawImage(video, 0, 0, w, h);
+          ctx.drawImage(still, 0, 0, w, h);
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           ctx.globalCompositeOperation = "destination-in";
           ctx.imageSmoothingEnabled = true;
